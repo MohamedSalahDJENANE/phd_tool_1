@@ -367,6 +367,9 @@
 
                 addLog(`Scanning Block ${i+1}: Query -> [${searchKeywords}]`, "info");
                 
+                const isExact = searchKeywords.startsWith('"');
+                const plainPhrase = searchKeywords.replace(/"/g, '');
+
                 // 1. Search Open Access arXiv
                 if (includeArxiv) {
                     const xmlText = await tryFetchProxies(searchKeywords);
@@ -380,7 +383,9 @@
                                     title: (e.getElementsByTagName("title")[0]?.textContent || "").trim(),
                                     summary: (e.getElementsByTagName("summary")[0]?.textContent || "").trim(),
                                     url: (e.getElementsByTagName("id")[0]?.textContent || "").trim(),
-                                    publisher: "arXiv Open Access"
+                                    publisher: "arXiv Open Access",
+                                    matchedPhrase: plainPhrase,
+                                    isExact: isExact
                                 });
                             });
                         }
@@ -392,7 +397,11 @@
                     const elsevierResults = await fetchElsevierTDM(searchKeywords, elsevierKey);
                     if (elsevierResults.length > 0) {
                         addLog(`Elsevier returned ${elsevierResults.length} matches.`, "success");
-                        foundEntries.push(...elsevierResults);
+                        elsevierResults.forEach(r => {
+                            r.matchedPhrase = plainPhrase;
+                            r.isExact = isExact;
+                            foundEntries.push(r);
+                        });
                     }
                 }
             }
@@ -408,11 +417,23 @@
             let maxTotalScore = 0;
             
             uniqueMap.forEach((entry) => {
-                const score = calculateScoreNGram(studentText, entry.summary, 2);
+                // Check abstract overlap normally
+                const abstractScore = calculateScoreNGram(studentText, entry.summary, 3);
                 
-                if (score > 0) {
-                    if (score > maxTotalScore) maxTotalScore = score;
-                    matchesList.push({ ...entry, score: score }); 
+                let finalScore = abstractScore;
+                
+                // CRITICAL FIX: If the search was an exact phrase, the paper is a guaranteed full-text hit!
+                // Even if the abstract score is 0%, we override it to a high confidence match.
+                if (entry.isExact && finalScore < 85) {
+                    finalScore = 85 + Math.min(15, abstractScore); // Base 85% + bonus for abstract overlap
+                } else if (!entry.isExact && finalScore === 0) {
+                    // False positive on generic keyword search
+                    return; 
+                }
+                
+                if (finalScore > 0) {
+                    if (finalScore > maxTotalScore) maxTotalScore = finalScore;
+                    matchesList.push({ ...entry, score: finalScore }); 
                 }
             });
 
@@ -426,34 +447,35 @@
             displayResults(maxTotalScore, highlightedHTML, matchesList, false);
         }
 
-        // NEW: Hyper-Specific Keyword Extraction Engine
+        // NEW: EXACT PHRASE EXTRACTION ENGINE
         function getTechnicalFingerprint(text) {
-            // 1. Strip citations (e.g., [1], (Smith, 2020))
-            const cleanText = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '');
+            // 1. Completely strip all academic citations [1], [4,5], etc.
+            let cleanText = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '');
             
-            // 2. Ignore common academic linking words
-            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'furthermore', 'therefore', 'results', 'study', 'this', 'that', 'from', 'with', 'which', 'these', 'could', 'would', 'should', 'have', 'been', 'their', 'there', 'than', 'into', 'were', 'also', 'other', 'like', 'some']);
+            // 2. Split the paragraph into discrete clauses using punctuation
+            const clauses = cleanText.split(/[.,;:!?\n]/);
             
-            // 3. Extract purely analytical words
-            const words = cleanText.toLowerCase().split(/[^a-z0-9-]/)
-                .filter(w => w.length > 5 && !stopWords.has(w)); 
-            
-            const uniqueWords = [...new Set(words)];
-            
-            // 4. Sort by length descending (longest words are statistically rarest in databases)
-            uniqueWords.sort((a, b) => b.length - a.length);
-            
-            // Fallback for very short sentences
-            if (uniqueWords.length < 3) {
-                const backupWords = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 4);
-                const uniqueBackup = [...new Set(backupWords)].sort((a,b) => b.length - a.length).slice(0, 4);
-                if (uniqueBackup.length === 0) return null;
-                return uniqueBackup.join(' AND ');
+            for (let clause of clauses) {
+                // Clean non-alphanumeric chars but keep spaces
+                const words = clause.replace(/[^\w\s-]/g, '').trim().split(/\s+/).filter(w => w.length > 0);
+                
+                // If the clause has at least 7 words, it's perfect for exact phrase hunting
+                if (words.length >= 7) {
+                    const candidatePhrase = words.slice(0, 7);
+                    // Ensure the phrase has at least one substantial word (avoiding "it is a to be or not to")
+                    if (candidatePhrase.some(w => w.length > 5)) {
+                        return `"${candidatePhrase.join(' ')}"`; // Wrap in quotes for strict Exact Phrase search
+                    }
+                }
             }
+
+            // Fallback (Only triggers for very short, fragmented sentences)
+            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore']);
+            const words = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 5 && !stopWords.has(w)); 
+            const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 4);
+            if (uniqueWords.length > 0) return uniqueWords.join(' AND ');
             
-            // Combine the top 4 rarest words with 'AND' to force a hyper-specific match
-            const queryWords = uniqueWords.slice(0, 4);
-            return queryWords.join(' AND ');
+            return null;
         }
 
         // Fetch Open Access Data
@@ -477,7 +499,6 @@
 
         // Fetch Paywalled Data using Student's Institutional API
         async function fetchElsevierTDM(keywords, apiKey) {
-            // query=all(word1 AND word2)
             const queryUrl = `https://api.elsevier.com/content/search/sciencedirect?query=all(${encodeURIComponent(keywords)})`;
             
             try {
@@ -605,7 +626,7 @@
             document.getElementById('networkHelp').scrollIntoView({ behavior: 'smooth' });
         }
 
-        // NEW: Asymmetric N-Gram Scoring (Accounts for Elsevier's truncated 'teasers')
+        // Updated N-Gram Scoring to handle abstract mismatches
         function calculateScoreNGram(t1, t2, n) {
             if (!t2) return 0;
             const getGrams = (t) => {
@@ -614,23 +635,23 @@
                 for (let i = 0; i <= words.length - n; i++) grams.add(words.slice(i, i + n).join(" "));
                 return grams;
             };
-            const g1 = getGrams(t1); // Student text (usually large)
-            const g2 = getGrams(t2); // Elsevier teaser (usually tiny)
+            const g1 = getGrams(t1); 
+            const g2 = getGrams(t2); 
             if (g1.size === 0 || g2.size === 0) return 0;
             
             const intersect = [...g1].filter(x => g2.has(x));
-            
-            // Critical Fix: Score is based on the size of the SHORTER text.
-            // If Elsevier only gives us 15 words, but all 15 match the student text, that's a 100% flag!
             const denominator = Math.min(g1.size, g2.size); 
             return Math.round((intersect.length / denominator) * 100);
         }
 
+        // Updated Highlighter to process both Abstract AND the hidden Exact Phrase
         function generateHighlightsNGram(student, matchesList, n) {
             if (!matchesList || matchesList.length === 0) return student;
             
             const sourceData = matchesList.map(match => {
-                const words = (match.summary || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
+                // We combine the summary AND the hidden exact phrase that was found in the full text!
+                const combinedText = `${match.summary || ""} ${match.matchedPhrase || ""}`;
+                const words = combinedText.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
                 const grams = new Set();
                 for (let i = 0; i <= words.length - n; i++) {
                     grams.add(words.slice(i, i + n).join(" "));
