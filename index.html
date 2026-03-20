@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Academic Scanner Pro | PhD Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .match-highlight { background-color: #fee2e2; border-bottom: 2px solid #ef4444; font-weight: 600; color: #991b1b; }
+        .tab-active { background-color: #4f46e5; color: white; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        .hidden { display: none; }
+        @keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .scanning-pulse { animation: pulse-soft 2s infinite; }
+        
+        #processLog {
+            font-family: 'Courier New', Courier, monospace;
+            scrollbar-width: thin;
+        }
+        .log-entry { border-left: 3px solid transparent; padding-left: 8px; margin-bottom: 4px; animation: fadeIn 0.2s ease; }
+        .log-info { border-color: #6366f1; color: #4338ca; }
+        .log-success { border-color: #10b981; color: #047857; font-weight: bold; }
+        .log-warning { border-color: #f59e0b; color: #b45309; }
+        .log-error { border-color: #ef4444; color: #b91c1c; font-weight: bold; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(-5px); } to { opacity: 1; transform: translateX(0); } }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-4 md:p-8 font-sans text-slate-900">
+
+    <div class="max-w-5xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <div class="bg-indigo-900 p-8 rounded-3xl text-white flex justify-between items-center shadow-xl">
+            <div>
+                <h1 class="text-3xl font-black tracking-tight flex items-center gap-3">
+                    <i data-lucide="shield-check"></i> Scanner AI Pro
+                </h1>
+                <p class="text-indigo-200 text-xs mt-2 font-bold uppercase tracking-widest">PhD Edition | Full-Spectrum Integrity Engine</p>
+            </div>
+            <div id="apiStatus" class="hidden md:flex items-center gap-2 bg-indigo-800 px-4 py-2 rounded-full text-xs font-bold border border-indigo-700">
+                <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span> Intelligent Auto-Cascade Mesh
+            </div>
+        </div>
+
+        <!-- Mode Selector -->
+        <div class="bg-white p-2 rounded-2xl shadow-sm flex gap-2 border border-slate-200 overflow-x-auto">
+            <button onclick="switchTab('local')" id="tab-local" class="tab-active whitespace-nowrap px-6 flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all">
+                <i data-lucide="layers" class="w-4 h-4"></i> Local Compare
+            </button>
+            <button onclick="switchTab('global')" id="tab-global" class="whitespace-nowrap px-6 flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-all">
+                <i data-lucide="globe" class="w-4 h-4"></i> Global Engine
+            </button>
+            <button onclick="switchTab('deep')" id="tab-deep" class="whitespace-nowrap px-6 flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-50 transition-all">
+                <i data-lucide="sparkles" class="w-4 h-4"></i> AI Deep Scan
+            </button>
+        </div>
+
+        <!-- Input Section -->
+        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-6 space-y-6">
+                
+                <!-- Institutional API Settings (Only visible in Global Mode) -->
+                <div id="apiSettingsBlock" class="hidden bg-slate-50 border border-slate-200 p-5 rounded-2xl space-y-3">
+                    <h3 class="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                        <i data-lucide="key" class="w-4 h-4"></i> Advanced Publisher Integrations (TDM)
+                    </h3>
+                    <div class="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                        <div class="flex-1 w-full relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i data-lucide="database" class="w-4 h-4 text-orange-500"></i>
+                            </div>
+                            <input type="password" id="elsevierKey" class="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:border-indigo-500 outline-none text-sm transition-all" placeholder="Enter Elsevier API Key (Optional)">
+                        </div>
+                        <button onclick="testElsevierAPI()" id="testApiBtn" class="whitespace-nowrap bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-3 rounded-xl text-xs font-bold transition-all border border-orange-200 flex items-center gap-2">
+                            <i data-lucide="activity" class="w-4 h-4"></i> Test Connection
+                        </button>
+                    </div>
+                    <p class="text-[10px] text-slate-400 leading-tight font-medium">Providing an Elsevier key enables deep-scanning of ScienceDirect. <strong class="text-amber-600">Note: Your network IP must match the university that issued the key.</strong></p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="inputContainer">
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black uppercase text-slate-400 ml-1">Submission Text</label>
+                        <textarea id="studentText" class="w-full h-64 p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all text-slate-700 leading-relaxed resize-none font-medium" placeholder="Paste the student's text here..."></textarea>
+                    </div>
+                    <div id="sourceContainer" class="space-y-2">
+                        <label class="text-[10px] font-black uppercase text-slate-400 ml-1">Reference Source (Local Mode)</label>
+                        <textarea id="sourceText" class="w-full h-64 p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all text-slate-700 leading-relaxed resize-none" placeholder="Paste the manual source to compare against..."></textarea>
+                    </div>
+                </div>
+
+                <div id="deepInfo" class="hidden bg-indigo-50 border border-indigo-100 p-4 rounded-2xl mb-4">
+                    <p class="text-sm text-indigo-700 font-medium flex items-center gap-2">
+                        <i data-lucide="info" class="w-4 h-4"></i> 
+                        Deep Scan features Auto-Cascade. If your region blocks the AI API, it will automatically route your scan to the Global Database Engine.
+                    </p>
+                </div>
+
+                <button onclick="handleScan()" id="scanBtn" class="w-full py-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-lg shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-3">
+                    <i data-lucide="search" id="scanIcon"></i> <span id="btnText">Analyze All Sources</span>
+                </button>
+
+                <!-- Process Log -->
+                <div id="logSection" class="hidden space-y-2">
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 font-bold">Process Analytics</label>
+                        <div class="flex gap-4">
+                            <button onclick="copyLogToClipboard()" class="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold uppercase underline flex items-center gap-1">
+                                <i data-lucide="copy" class="w-3 h-3"></i> Copy Log
+                            </button>
+                            <button onclick="clearLog()" class="text-[10px] text-slate-400 hover:text-red-600 font-bold uppercase underline">Clear</button>
+                        </div>
+                    </div>
+                    <div id="processLog" class="w-full h-40 p-3 bg-slate-900 rounded-xl overflow-y-auto text-[11px] leading-tight shadow-inner text-indigo-300"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manual Verification Bypass -->
+        <div id="networkHelp" class="hidden bg-amber-50 border border-amber-200 p-6 rounded-3xl space-y-4 shadow-sm">
+            <h3 class="font-bold text-amber-800 flex items-center gap-2 text-lg">
+                <i data-lucide="globe-lock"></i> All Automation Layers Exhausted
+            </h3>
+            <p class="text-sm text-amber-700">Both the AI Engine and the Global Databases encountered dead ends or zero matches for these specific segments. <strong>Please use your local browser to verify these segments manually:</strong></p>
+            <div id="manualLinksContainer" class="flex flex-col gap-3"></div>
+        </div>
+
+        <!-- Results Display -->
+        <div id="resultsArea" class="hidden space-y-6 pb-20">
+            <div id="summaryCards" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center">
+                    <p class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Total Similarity</p>
+                    <span id="finalScore" class="text-6xl font-black text-indigo-600">0%</span>
+                </div>
+                <div class="md:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-slate-200 flex items-center gap-6">
+                    <div id="statusIcon" class="p-4 rounded-2xl bg-indigo-50 text-indigo-600">
+                        <i data-lucide="info" class="w-10 h-10"></i>
+                    </div>
+                    <div>
+                        <h3 id="statusTitle" class="text-xl font-black text-slate-800">Scan Complete</h3>
+                        <p id="statusDesc" class="text-slate-500">Analysis completed against available academic indices.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Assessment -->
+            <div id="aiAnalysisContainer" class="hidden bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-6 bg-indigo-900 text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i> AI Assessment Report
+                </div>
+                <div id="aiAnalysisBody" class="p-8 text-slate-700 leading-relaxed prose prose-indigo max-w-none"></div>
+            </div>
+
+            <!-- Segmented Highlighting -->
+            <div id="segmentedContainer" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-6 bg-slate-50 border-b border-slate-100 font-bold text-xs uppercase tracking-widest text-slate-500 flex justify-between items-center">
+                    <span>Color-Coded Segment Highlighting</span>
+                    <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded uppercase font-bold tracking-widest">N-Gram Verify</span>
+                </div>
+                <div id="highlightReport" class="p-8 text-lg leading-loose text-slate-700 whitespace-pre-wrap"></div>
+            </div>
+
+            <!-- Source Cards -->
+            <div id="globalSources" class="hidden space-y-4">
+                <h3 class="font-black text-slate-400 text-xs uppercase tracking-[0.2em] ml-2 font-bold text-indigo-900">Detected Source Papers</h3>
+                <div id="sourcesList" class="space-y-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'local';
+        const apiKey = ""; 
+
+        // Distinct colors for different source highlights
+        const colorPalette = [
+            { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' }, // Red
+            { bg: '#e0e7ff', border: '#6366f1', text: '#3730a3' }, // Indigo
+            { bg: '#dcfce7', border: '#22c55e', text: '#166534' }, // Green
+            { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' }, // Amber
+            { bg: '#fce7f3', border: '#ec4899', text: '#9d174d' }, // Pink
+            { bg: '#ccfbf1', border: '#14b8a6', text: '#115e59' }, // Teal
+            { bg: '#f3e8ff', border: '#a855f7', text: '#6b21a8' }, // Purple
+            { bg: '#ffedd5', border: '#f97316', text: '#9a3412' }  // Orange
+        ];
+
+        lucide.createIcons();
+
+        function addLog(message, type = 'info') {
+            const logSection = document.getElementById('logSection');
+            const logElement = document.getElementById('processLog');
+            logSection.classList.remove('hidden');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            entry.innerHTML = `<span class="opacity-50 text-slate-400 font-mono text-[9px] mr-2">[${time}]</span> ${message}`;
+            logElement.appendChild(entry);
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function copyLogToClipboard() {
+            const logElement = document.getElementById('processLog');
+            const text = logElement.innerText;
+            const tempInput = document.createElement('textarea');
+            tempInput.value = text;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            addLog("Process log saved to clipboard.", "success");
+        }
+
+        function clearLog() {
+            document.getElementById('processLog').innerHTML = '';
+            document.getElementById('logSection').classList.add('hidden');
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            ['local', 'global', 'deep'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                if (t === tab) el.classList.add('tab-active');
+                else el.classList.remove('tab-active', 'text-white');
+            });
+            
+            document.getElementById('sourceContainer').style.display = tab === 'local' ? 'block' : 'none';
+            document.getElementById('deepInfo').classList.toggle('hidden', tab !== 'deep');
+            
+            // Show API settings only in Global Mode
+            const apiSettings = document.getElementById('apiSettingsBlock');
+            if (tab === 'global' || tab === 'deep') {
+                apiSettings.classList.remove('hidden');
+            } else {
+                apiSettings.classList.add('hidden');
+            }
+
+            document.getElementById('resultsArea').classList.add('hidden');
+            document.getElementById('networkHelp').classList.add('hidden');
+            addLog(`Active Engine: ${tab.toUpperCase()}`, 'info');
+            lucide.createIcons();
+        }
+
+        // NEW: Independent Elsevier API Tester
+        async function testElsevierAPI() {
+            const key = document.getElementById('elsevierKey').value.trim();
+            if (!key) return alert("Please enter an Elsevier API Key first.");
+
+            const btn = document.getElementById('testApiBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Testing...`;
+            lucide.createIcons();
+
+            clearLog();
+            addLog(`Testing Elsevier API Connection with key: ${key.substring(0, 5)}...`, 'info');
+
+            const queryUrl = `https://api.elsevier.com/content/search/sciencedirect?query=test`;
+            
+            try {
+                const res = await fetch(queryUrl, { 
+                    method: 'GET',
+                    headers: { 
+                        'X-ELS-APIKey': key,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (res.status === 200) {
+                    addLog("SUCCESS! Elsevier accepted your API Key and Network IP.", "success");
+                    alert("Connection Successful! Your key and IP address are authorized by Elsevier.");
+                } else if (res.status === 403) {
+                    addLog(`HTTP 403 Forbidden. Your key is valid, but your CURRENT IP ADDRESS is not recognized as a campus network. Connect to the university VPN.`, "error");
+                    alert("HTTP 403: IP Blocked.\nElsevier sees your API key, but is rejecting your internet connection. You must be on the University VPN.");
+                } else if (res.status === 401) {
+                    addLog(`HTTP 401 Unauthorized. Key invalid, pending activation, OR CORS Domain mismatch.`, "error");
+                    alert("HTTP 401: Unauthorized.\n1. The key is incorrect or pending activation.\n2. CORS Domain Mismatch: The 'Website URL' you registered on Elsevier doesn't match your local file. Change the CORS setting in your Elsevier dashboard to '*' (asterisk).");
+                } else {
+                    addLog(`HTTP ${res.status}: Unknown Error.`, "warning");
+                }
+            } catch (err) {
+                addLog(`Elsevier Request Crashed: Ensure your CORS Unblocker extension is active for custom headers.`, "error");
+                alert("Network Error: Ensure your CORS Unblocker browser extension is active.");
+            } finally {
+                btn.innerHTML = originalText;
+                lucide.createIcons();
+            }
+        }
+
+        async function handleScan() {
+            const studentText = document.getElementById('studentText').value.trim();
+            if (!studentText || studentText.length < 20) return alert("Please enter a substantial technical text.");
+
+            const btn = document.getElementById('scanBtn');
+            const btnText = document.getElementById('btnText');
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            btnText.innerText = "Running Analysis...";
+            
+            addLog(`Starting ${currentTab.toUpperCase()} integrity check...`, 'info');
+
+            try {
+                if (currentTab === 'local') runLocalScan(studentText);
+                else if (currentTab === 'global') await runGlobalScan(studentText);
+                else await runDeepScan(studentText);
+            } catch (err) {
+                addLog(`CRITICAL ERROR: ${err.message}`, 'error');
+                showManualFallback(studentText);
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+                btnText.innerText = "Analyze All Sources";
+                lucide.createIcons();
+            }
+        }
+
+        function runLocalScan(studentText) {
+            const sourceText = document.getElementById('sourceText').value.trim();
+            if (!sourceText) return alert("Source material required for local comparison.");
+            
+            const score = calculateScoreNGram(studentText, sourceText, 3);
+            const localMatches = [{
+                title: "Local Reference Source",
+                summary: sourceText,
+                url: "#",
+                score: score + "%",
+                color: colorPalette[0],
+                publisher: "Local"
+            }];
+
+            displayResults(score, generateHighlightsNGram(studentText, localMatches, 3), localMatches, false);
+        }
+
+        async function runGlobalScan(studentText) {
+            let chunks = studentText.split(/[.!?]\s+|\n\n/).filter(c => c.trim().length > 30);
+            addLog(`Global Engine: Analyzing ${chunks.length} distinct sentence blocks.`, "info");
+
+            const elsevierKey = document.getElementById('elsevierKey').value.trim();
+            if (elsevierKey) {
+                addLog("Institutional Elsevier API Key detected. Engaging ScienceDirect TDM...", "info");
+            } else {
+                addLog("No Elsevier key provided. Running standard Open Access (arXiv) scan...", "info");
+            }
+
+            let foundEntries = [];
+
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i].trim();
+                const searchKeywords = getTechnicalFingerprint(chunk);
+                if (!searchKeywords) continue;
+
+                addLog(`Scanning Block ${i+1}: [${searchKeywords}]`, "info");
+                
+                // 1. Search Open Access arXiv
+                const xmlText = await tryFetchProxies(searchKeywords);
+                if (xmlText) {
+                    const xml = new DOMParser().parseFromString(xmlText, "text/xml");
+                    const entries = Array.from(xml.getElementsByTagName("entry"));
+                    if (entries.length > 0) {
+                        addLog(`arXiv returned ${entries.length} matches.`, "success");
+                        entries.forEach(e => {
+                            foundEntries.push({
+                                title: (e.getElementsByTagName("title")[0]?.textContent || "").trim(),
+                                summary: (e.getElementsByTagName("summary")[0]?.textContent || "").trim(),
+                                url: (e.getElementsByTagName("id")[0]?.textContent || "").trim(),
+                                publisher: "arXiv Open Access"
+                            });
+                        });
+                    }
+                }
+
+                // 2. Search Elsevier if Key exists
+                if (elsevierKey) {
+                    const elsevierResults = await fetchElsevierTDM(searchKeywords, elsevierKey);
+                    if (elsevierResults.length > 0) {
+                        addLog(`Elsevier returned ${elsevierResults.length} matches.`, "success");
+                        foundEntries.push(...elsevierResults);
+                    }
+                }
+            }
+
+            if (foundEntries.length === 0) throw new Error("No database matches found across queried publishers.");
+
+            const uniqueMap = new Map();
+            foundEntries.forEach(e => {
+                if (e.title && !uniqueMap.has(e.title)) uniqueMap.set(e.title, e);
+            });
+
+            let matchesList = [];
+            let maxTotalScore = 0;
+            
+            uniqueMap.forEach((entry) => {
+                const score = calculateScoreNGram(studentText, entry.summary, 2);
+                
+                if (score > 0) {
+                    if (score > maxTotalScore) maxTotalScore = score;
+                    matchesList.push({ ...entry, score: score }); 
+                }
+            });
+
+            matchesList.sort((a,b) => b.score - a.score);
+            matchesList.forEach((m, idx) => {
+                m.color = colorPalette[idx % colorPalette.length];
+                m.score = m.score + "%"; 
+            });
+
+            const highlightedHTML = generateHighlightsNGram(studentText, matchesList, 3);
+            displayResults(maxTotalScore, highlightedHTML, matchesList, false);
+        }
+
+        // Fetch Open Access Data
+        async function tryFetchProxies(keywords) {
+            const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(keywords)}&max_results=5`;
+            const proxies = [
+                { name: "CodeTabs", url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, type: 'text' },
+                { name: "AllOrigins", url: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, type: 'json' }
+            ];
+
+            for (const p of proxies) {
+                try {
+                    const res = await fetch(p.url(arxivUrl));
+                    if (!res.ok) continue;
+                    let text = p.type === 'json' ? (await res.json()).contents : await res.clone().text();
+                    if (text && text.includes('<entry>')) return text;
+                } catch (e) {}
+            }
+            return null;
+        }
+
+        // Fetch Paywalled Data using Student's Institutional API
+        async function fetchElsevierTDM(keywords, apiKey) {
+            const queryUrl = `https://api.elsevier.com/content/search/sciencedirect?query=all(${encodeURIComponent(keywords)})`;
+            
+            try {
+                const res = await fetch(queryUrl, { 
+                    method: 'GET',
+                    headers: { 
+                        'X-ELS-APIKey': apiKey,
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (res.status === 403) {
+                    addLog(`Elsevier HTTP 403: Key valid, but IP rejected. Connect to URCA Campus VPN to authenticate your IP address.`, "error");
+                    return [];
+                }
+
+                if (res.status === 401) {
+                    addLog(`Elsevier HTTP 401: Key invalid, pending activation, OR CORS Domain mismatch (Check your Website URL settings in Elsevier dashboard).`, "error");
+                    return [];
+                }
+                
+                if (!res.ok) {
+                    addLog(`Elsevier HTTP ${res.status}: Data fetch failed.`, "error");
+                    return [];
+                }
+
+                const data = await res.json();
+                const entries = data['search-results']?.entry || [];
+                
+                return entries.map(e => {
+                    const summary = e['dc:description'] || e['teaser'] || e['dc:title'] || "";
+                    const link = e['link']?.find(l => l['@ref'] === 'scidir')?.['@href'] || e['prism:url'] || "#";
+                    return {
+                        title: e['dc:title'] || "Unknown Title",
+                        summary: summary,
+                        url: link,
+                        publisher: "Elsevier ScienceDirect"
+                    };
+                });
+            } catch (err) {
+                addLog(`Elsevier Request Crashed: Ensure your CORS Unblocker extension is active for custom headers.`, "error");
+                return [];
+            }
+        }
+
+        async function runDeepScan(studentText) {
+            addLog("Requesting AI search and cross-referencing...", "info");
+            const prompt = `Perform a PhD-level integrity scan on this text. Identify the SPECIFIC paper titles and authors if the text is copied. Check for ARTEMIS or EcoFair. If multiple sources are present, list them all. Text: "${studentText}"`;
+            
+            try {
+                addLog("Attempting connection with Google Search Grounding...", "info");
+                const result = await callGemini(prompt, true);
+                processAIResult(result);
+            } catch (err) {
+                addLog(`Live Search failed (${err.message}). Activating fallback to Internal Knowledge...`, "warning");
+                try {
+                    const result = await callGemini(prompt, false);
+                    processAIResult(result);
+                } catch (fallbackErr) {
+                    addLog(`AI Engine completely unreachable (${fallbackErr.message}). Automatically rerouting to Global Database Engine...`, "warning");
+                    await runGlobalScan(studentText);
+                }
+            }
+        }
+
+        function processAIResult(result) {
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "Analysis could not be generated.";
+            const attributions = result.candidates?.[0]?.groundingMetadata?.groundingAttributions || [];
+            addLog(`AI Check complete. Detected ${attributions.length} direct web matches.`, "success");
+            const sources = attributions.map(a => ({ title: a.web?.title || "Academic Source", url: a.web?.uri, score: "High Confidence Match", publisher: "Web Extraction" }));
+            displayResults("AI", text, sources, true);
+        }
+
+        async function callGemini(prompt, useSearch = false) {
+            const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: "Expert Integrity Assistant. Identify EXACT paper titles and links. Mention authors if known." }] }
+            };
+            if (useSearch) payload.tools = [{ "google_search": {} }];
+            
+            const fetchConfig = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            };
+
+            const routes = [
+                { name: "Direct", url: targetUrl },
+                { name: "CorsProxy", url: `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` },
+                { name: "ThingProxy", url: `https://thingproxy.freeboard.io/fetch/${targetUrl}` }
+            ];
+
+            let lastError;
+            for (const route of routes) {
+                try {
+                    const res = await fetch(route.url, fetchConfig);
+                    if (res.status === 403) throw new Error("HTTP 403"); 
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return await res.json();
+                } catch (e) {
+                    lastError = e;
+                    addLog(`AI Route '${route.name}' failed: ${e.message}`, "info");
+                }
+            }
+            throw lastError; 
+        }
+
+        function getTechnicalFingerprint(text) {
+            const identifiers = text.match(/[A-Z][A-Za-z0-9-]{4,}/g);
+            if (identifiers && identifiers.length > 0) return identifiers.slice(0, 2).join(' ');
+            
+            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves']);
+            return text.toLowerCase().split(/[^a-z0-9]/).filter(w => w.length > 7 && !stopWords.has(w)).sort((a,b) => b.length - a.length).slice(0, 3).join(' ');
+        }
+
+        function showManualFallback(text) {
+            const help = document.getElementById('networkHelp');
+            const container = document.getElementById('manualLinksContainer');
+            help.classList.remove('hidden');
+            container.innerHTML = "";
+            const chunks = text.split(/[.!?]\s+/).filter(c => c.length > 40).slice(0, 3);
+            chunks.forEach((c, i) => {
+                const q = c.trim().split(/\s+/).slice(0, 10).join(' ');
+                container.innerHTML += `<div class="bg-white/50 p-4 rounded-2xl border border-amber-200">
+                    <p class="text-[10px] font-bold text-amber-600 uppercase mb-2">Segment ${i+1}</p>
+                    <a href="https://www.google.com/search?q=%22${encodeURIComponent(q)}%22" target="_blank" class="bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold inline-block hover:bg-amber-700 transition-colors shadow-sm">
+                        <i data-lucide="search" class="w-3 h-3 inline mr-1"></i> Exact Phrase Search (Local Browser)
+                    </a>
+                </div>`;
+            });
+            lucide.createIcons();
+            document.getElementById('networkHelp').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function calculateScoreNGram(t1, t2, n) {
+            if (!t2) return 0;
+            const getGrams = (t) => {
+                const words = t.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
+                const grams = new Set();
+                for (let i = 0; i <= words.length - n; i++) grams.add(words.slice(i, i + n).join(" "));
+                return grams;
+            };
+            const g1 = getGrams(t1);
+            const g2 = getGrams(t2);
+            if (g1.size === 0) return 0;
+            const intersect = [...g1].filter(x => g2.has(x));
+            return Math.round((intersect.length / g1.size) * 100);
+        }
+
+        function generateHighlightsNGram(student, matchesList, n) {
+            if (!matchesList || matchesList.length === 0) return student;
+            
+            const sourceData = matchesList.map(match => {
+                const words = (match.summary || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
+                const grams = new Set();
+                for (let i = 0; i <= words.length - n; i++) {
+                    grams.add(words.slice(i, i + n).join(" "));
+                }
+                return { grams: grams, color: match.color };
+            });
+
+            const studentWords = student.split(/\s+/);
+            const wordColors = new Array(studentWords.length).fill(null);
+
+            for (let i = 0; i <= studentWords.length - n; i++) {
+                const gram = studentWords.slice(i, i + n).join(" ").toLowerCase().replace(/[^\w\s]/g, "");
+                
+                for (let s = 0; s < sourceData.length; s++) {
+                    if (sourceData[s].grams.has(gram)) {
+                        for (let j = 0; j < n; j++) {
+                            if (!wordColors[i + j]) wordColors[i + j] = sourceData[s].color;
+                        }
+                        break; 
+                    }
+                }
+            }
+
+            const output = [];
+            for (let i = 0; i < studentWords.length; i++) {
+                if (wordColors[i]) {
+                    const c = wordColors[i];
+                    output.push(`<span style="background-color: ${c.bg}; border-bottom: 2px solid ${c.border}; color: ${c.text}; font-weight: 600; padding: 0 2px; border-radius: 2px; transition: all 0.2s;">${studentWords[i]}</span>`);
+                } else {
+                    output.push(studentWords[i]);
+                }
+            }
+            return output.join(" ");
+        }
+
+        function displayResults(score, content, matches, isAI) {
+            document.getElementById('resultsArea').classList.remove('hidden');
+            document.getElementById('finalScore').innerText = score === "AI" ? "AI" : score + "%";
+            
+            const aiCont = document.getElementById('aiAnalysisContainer');
+            const segCont = document.getElementById('segmentedContainer');
+            
+            if (isAI) {
+                aiCont.classList.remove('hidden');
+                segCont.classList.add('hidden');
+                document.getElementById('aiAnalysisBody').innerHTML = content.replace(/\n/g, '<br>');
+            } else {
+                aiCont.classList.add('hidden');
+                segCont.classList.remove('hidden');
+                document.getElementById('highlightReport').innerHTML = content;
+            }
+
+            const list = document.getElementById('sourcesList');
+            list.innerHTML = "";
+            if (matches && matches.length > 0) {
+                document.getElementById('globalSources').classList.remove('hidden');
+                matches.forEach(m => {
+                    const badgeStyle = m.color ? `background-color: ${m.color.bg}; color: ${m.color.text}; border: 1px solid ${m.color.border};` : 'background-color: #e0e7ff; color: #4f46e5;';
+                    const publisherBadge = m.publisher && m.publisher.includes("Elsevier") 
+                        ? `<span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-orange-200">${m.publisher}</span>`
+                        : `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-indigo-200">${m.publisher || 'Source'}</span>`;
+
+                    list.innerHTML += `<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all hover:shadow-md">
+                        <div class="flex justify-between items-start font-bold text-slate-800 gap-4 mb-2">
+                            <div class="flex items-start gap-3">
+                                ${m.color ? `<span class="w-3 h-3 mt-1.5 rounded-full shrink-0 shadow-sm" style="background-color: ${m.color.border}"></span>` : ''}
+                                <div class="flex flex-col gap-1">
+                                    <span class="line-clamp-2">${m.title}</span>
+                                    <div>${publisherBadge}</div>
+                                </div>
+                            </div>
+                            <span class="px-2 py-1 rounded-lg text-xs shrink-0" style="${badgeStyle}">${m.score}</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400 mt-3 italic line-clamp-2 ml-6">${m.summary}</p>
+                        <a href="${m.url}" target="_blank" class="text-indigo-500 text-xs font-bold mt-4 inline-block underline ml-6 hover:text-indigo-700">Open Article In Repository →</a>
+                    </div>`;
+                });
+            } else {
+                document.getElementById('globalSources').classList.add('hidden');
+            }
+            lucide.createIcons();
+            document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
