@@ -248,7 +248,7 @@
             lucide.createIcons();
         }
 
-        // NEW: Independent Elsevier API Tester
+        // Independent Elsevier API Tester
         async function testElsevierAPI() {
             const key = document.getElementById('elsevierKey').value.trim();
             if (!key) return alert("Please enter an Elsevier API Key first.");
@@ -365,7 +365,7 @@
                 const searchKeywords = getTechnicalFingerprint(chunk);
                 if (!searchKeywords) continue;
 
-                addLog(`Scanning Block ${i+1}: [${searchKeywords}]`, "info");
+                addLog(`Scanning Block ${i+1}: Query -> [${searchKeywords}]`, "info");
                 
                 // 1. Search Open Access arXiv
                 if (includeArxiv) {
@@ -426,6 +426,36 @@
             displayResults(maxTotalScore, highlightedHTML, matchesList, false);
         }
 
+        // NEW: Hyper-Specific Keyword Extraction Engine
+        function getTechnicalFingerprint(text) {
+            // 1. Strip citations (e.g., [1], (Smith, 2020))
+            const cleanText = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '');
+            
+            // 2. Ignore common academic linking words
+            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'furthermore', 'therefore', 'results', 'study', 'this', 'that', 'from', 'with', 'which', 'these', 'could', 'would', 'should', 'have', 'been', 'their', 'there', 'than', 'into', 'were', 'also', 'other', 'like', 'some']);
+            
+            // 3. Extract purely analytical words
+            const words = cleanText.toLowerCase().split(/[^a-z0-9-]/)
+                .filter(w => w.length > 5 && !stopWords.has(w)); 
+            
+            const uniqueWords = [...new Set(words)];
+            
+            // 4. Sort by length descending (longest words are statistically rarest in databases)
+            uniqueWords.sort((a, b) => b.length - a.length);
+            
+            // Fallback for very short sentences
+            if (uniqueWords.length < 3) {
+                const backupWords = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 4);
+                const uniqueBackup = [...new Set(backupWords)].sort((a,b) => b.length - a.length).slice(0, 4);
+                if (uniqueBackup.length === 0) return null;
+                return uniqueBackup.join(' AND ');
+            }
+            
+            // Combine the top 4 rarest words with 'AND' to force a hyper-specific match
+            const queryWords = uniqueWords.slice(0, 4);
+            return queryWords.join(' AND ');
+        }
+
         // Fetch Open Access Data
         async function tryFetchProxies(keywords) {
             const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(keywords)}&max_results=5`;
@@ -447,6 +477,7 @@
 
         // Fetch Paywalled Data using Student's Institutional API
         async function fetchElsevierTDM(keywords, apiKey) {
+            // query=all(word1 AND word2)
             const queryUrl = `https://api.elsevier.com/content/search/sciencedirect?query=all(${encodeURIComponent(keywords)})`;
             
             try {
@@ -555,14 +586,6 @@
             throw lastError; 
         }
 
-        function getTechnicalFingerprint(text) {
-            const identifiers = text.match(/[A-Z][A-Za-z0-9-]{4,}/g);
-            if (identifiers && identifiers.length > 0) return identifiers.slice(0, 2).join(' ');
-            
-            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves']);
-            return text.toLowerCase().split(/[^a-z0-9]/).filter(w => w.length > 7 && !stopWords.has(w)).sort((a,b) => b.length - a.length).slice(0, 3).join(' ');
-        }
-
         function showManualFallback(text) {
             const help = document.getElementById('networkHelp');
             const container = document.getElementById('manualLinksContainer');
@@ -582,6 +605,7 @@
             document.getElementById('networkHelp').scrollIntoView({ behavior: 'smooth' });
         }
 
+        // NEW: Asymmetric N-Gram Scoring (Accounts for Elsevier's truncated 'teasers')
         function calculateScoreNGram(t1, t2, n) {
             if (!t2) return 0;
             const getGrams = (t) => {
@@ -590,11 +614,16 @@
                 for (let i = 0; i <= words.length - n; i++) grams.add(words.slice(i, i + n).join(" "));
                 return grams;
             };
-            const g1 = getGrams(t1);
-            const g2 = getGrams(t2);
-            if (g1.size === 0) return 0;
+            const g1 = getGrams(t1); // Student text (usually large)
+            const g2 = getGrams(t2); // Elsevier teaser (usually tiny)
+            if (g1.size === 0 || g2.size === 0) return 0;
+            
             const intersect = [...g1].filter(x => g2.has(x));
-            return Math.round((intersect.length / g1.size) * 100);
+            
+            // Critical Fix: Score is based on the size of the SHORTER text.
+            // If Elsevier only gives us 15 words, but all 15 match the student text, that's a 100% flag!
+            const denominator = Math.min(g1.size, g2.size); 
+            return Math.round((intersect.length / denominator) * 100);
         }
 
         function generateHighlightsNGram(student, matchesList, n) {
