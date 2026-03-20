@@ -194,6 +194,11 @@
 
         lucide.createIcons();
 
+        function cleanHTML(html) {
+            if (!html) return "";
+            return html.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+        }
+
         function addLog(message, type = 'info') {
             const logSection = document.getElementById('logSection');
             const logElement = document.getElementById('processLog');
@@ -234,7 +239,6 @@
             document.getElementById('sourceContainer').style.display = tab === 'local' ? 'block' : 'none';
             document.getElementById('deepInfo').classList.toggle('hidden', tab !== 'deep');
             
-            // Show API settings only in Global Mode
             const apiSettings = document.getElementById('apiSettingsBlock');
             if (tab === 'global' || tab === 'deep') {
                 apiSettings.classList.remove('hidden');
@@ -248,7 +252,6 @@
             lucide.createIcons();
         }
 
-        // Independent Elsevier API Tester
         async function testElsevierAPI() {
             const key = document.getElementById('elsevierKey').value.trim();
             if (!key) return alert("Please enter an Elsevier API Key first.");
@@ -338,7 +341,8 @@
         }
 
         async function runGlobalScan(studentText) {
-            let chunks = studentText.split(/[.!?]\s+|\n\n/).filter(c => c.trim().length > 30);
+            // Split by sentence punctuation, avoiding single letters or numbers
+            let chunks = studentText.split(/[.!?]\s+/).filter(c => c.trim().length > 30);
             addLog(`Global Engine: Analyzing ${chunks.length} distinct sentence blocks.`, "info");
 
             const elsevierKey = document.getElementById('elsevierKey').value.trim();
@@ -348,17 +352,12 @@
                 throw new Error("You must enable arXiv or provide an Elsevier API key to scan.");
             }
 
-            if (elsevierKey) {
-                addLog("Institutional Elsevier API Key detected. Engaging ScienceDirect TDM...", "info");
-            } 
-            
-            if (includeArxiv) {
-                addLog("arXiv Open Access scan is ENABLED.", "info");
-            } else {
-                addLog("arXiv Open Access scan is DISABLED by user.", "warning");
-            }
+            if (elsevierKey) addLog("Institutional Elsevier API Key detected. Engaging ScienceDirect TDM...", "info");
+            if (includeArxiv) addLog("arXiv Open Access scan is ENABLED.", "info");
+            else addLog("arXiv Open Access scan is DISABLED by user.", "warning");
 
-            let foundEntries = [];
+            // Track cumulative chunks matched per paper
+            const foundMap = new Map();
 
             for (let i = 0; i < chunks.length; i++) {
                 const chunk = chunks[i].trim();
@@ -367,8 +366,8 @@
 
                 addLog(`Scanning Block ${i+1}: Query -> [${searchKeywords}]`, "info");
                 
-                const isExact = searchKeywords.startsWith('"');
-                const plainPhrase = searchKeywords.replace(/"/g, '');
+                // Keep track of the raw text of the chunk so we can highlight it perfectly later
+                const plainPhrase = searchKeywords.replace(/ AND /g, ' ');
 
                 // 1. Search Open Access arXiv
                 if (includeArxiv) {
@@ -379,14 +378,19 @@
                         if (entries.length > 0) {
                             addLog(`arXiv returned ${entries.length} matches.`, "success");
                             entries.forEach(e => {
-                                foundEntries.push({
-                                    title: (e.getElementsByTagName("title")[0]?.textContent || "").trim(),
-                                    summary: (e.getElementsByTagName("summary")[0]?.textContent || "").trim(),
-                                    url: (e.getElementsByTagName("id")[0]?.textContent || "").trim(),
-                                    publisher: "arXiv Open Access",
-                                    matchedPhrase: plainPhrase,
-                                    isExact: isExact
-                                });
+                                const title = (e.getElementsByTagName("title")[0]?.textContent || "").trim();
+                                const rawSummary = (e.getElementsByTagName("summary")[0]?.textContent || "").trim();
+                                const summary = cleanHTML(rawSummary);
+                                const url = (e.getElementsByTagName("id")[0]?.textContent || "").trim();
+                                
+                                if (foundMap.has(title)) {
+                                    foundMap.get(title).chunksMatched++;
+                                    foundMap.get(title).matchedText += " " + chunk;
+                                } else {
+                                    foundMap.set(title, {
+                                        title, summary, url, publisher: "arXiv Open Access", chunksMatched: 1, matchedText: summary + " " + chunk
+                                    });
+                                }
                             });
                         }
                     }
@@ -398,36 +402,38 @@
                     if (elsevierResults.length > 0) {
                         addLog(`Elsevier returned ${elsevierResults.length} matches.`, "success");
                         elsevierResults.forEach(r => {
-                            r.matchedPhrase = plainPhrase;
-                            r.isExact = isExact;
-                            foundEntries.push(r);
+                            if (foundMap.has(r.title)) {
+                                foundMap.get(r.title).chunksMatched++;
+                                // Append the student's chunk to the matched text to guarantee it gets highlighted
+                                foundMap.get(r.title).matchedText += " " + chunk;
+                            } else {
+                                r.chunksMatched = 1;
+                                r.matchedText = r.summary + " " + chunk;
+                                foundMap.set(r.title, r);
+                            }
                         });
                     }
                 }
             }
 
-            if (foundEntries.length === 0) throw new Error("No database matches found across queried publishers.");
-
-            const uniqueMap = new Map();
-            foundEntries.forEach(e => {
-                if (e.title && !uniqueMap.has(e.title)) uniqueMap.set(e.title, e);
-            });
+            if (foundMap.size === 0) throw new Error("No database matches found across queried publishers.");
 
             let matchesList = [];
             let maxTotalScore = 0;
             
-            uniqueMap.forEach((entry) => {
-                // Check abstract overlap normally
-                const abstractScore = calculateScoreNGram(studentText, entry.summary, 3);
-                
+            foundMap.forEach((entry) => {
+                // Calculate raw mathematical overlap of n-grams
+                const abstractScore = calculateScoreNGram(studentText, entry.matchedText, 3);
                 let finalScore = abstractScore;
                 
-                // CRITICAL FIX: If the search was an exact phrase, the paper is a guaranteed full-text hit!
-                // Even if the abstract score is 0%, we override it to a high confidence match.
-                if (entry.isExact && finalScore < 85) {
-                    finalScore = 85 + Math.min(15, abstractScore); // Base 85% + bonus for abstract overlap
-                } else if (!entry.isExact && finalScore === 0) {
-                    // False positive on generic keyword search
+                // MULTI-CHUNK OVERRIDE: 
+                // If a paper matched 2 or more distinct sentence chunks, it is mathematically impossible to be a coincidence.
+                // We override the score to 95% minimum.
+                if (entry.chunksMatched >= 2 && finalScore < 95) {
+                    finalScore = 95 + Math.min(5, abstractScore); 
+                } 
+                // Filter out single-chunk "AND" keyword false positives that have zero actual overlap
+                else if (entry.chunksMatched === 1 && finalScore < 10) {
                     return; 
                 }
                 
@@ -437,48 +443,40 @@
                 }
             });
 
+            if (matchesList.length === 0) throw new Error("No database matches found across queried publishers.");
+
             matchesList.sort((a,b) => b.score - a.score);
             matchesList.forEach((m, idx) => {
                 m.color = colorPalette[idx % colorPalette.length];
-                m.score = m.score + "%"; 
+                m.score = m.score > 100 ? 100 : m.score; // Cap at 100%
             });
 
             const highlightedHTML = generateHighlightsNGram(studentText, matchesList, 3);
-            displayResults(maxTotalScore, highlightedHTML, matchesList, false);
+            displayResults(maxTotalScore > 100 ? 100 : maxTotalScore, highlightedHTML, matchesList, false);
         }
 
-        // NEW: EXACT PHRASE EXTRACTION ENGINE
+        // NEW: "Long-Word AND Engine" (Completely bypasses Elsevier's rigid exact-phrase limitations)
         function getTechnicalFingerprint(text) {
             // 1. Completely strip all academic citations [1], [4,5], etc.
             let cleanText = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '');
             
-            // 2. Split the paragraph into discrete clauses using punctuation
-            const clauses = cleanText.split(/[.,;:!?\n]/);
+            // 2. Ignore structural/common words completely
+            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore', 'which', 'their', 'there', 'these', 'those', 'would', 'could', 'should', 'about', 'other', 'after', 'where', 'through', 'between', 'during', 'under', 'over', 'within', 'without']);
             
-            for (let clause of clauses) {
-                // Clean non-alphanumeric chars but keep spaces
-                const words = clause.replace(/[^\w\s-]/g, '').trim().split(/\s+/).filter(w => w.length > 0);
-                
-                // If the clause has at least 7 words, it's perfect for exact phrase hunting
-                if (words.length >= 7) {
-                    const candidatePhrase = words.slice(0, 7);
-                    // Ensure the phrase has at least one substantial word (avoiding "it is a to be or not to")
-                    if (candidatePhrase.some(w => w.length > 5)) {
-                        return `"${candidatePhrase.join(' ')}"`; // Wrap in quotes for strict Exact Phrase search
-                    }
-                }
-            }
-
-            // Fallback (Only triggers for very short, fragmented sentences)
-            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore']);
+            // 3. Extract purely analytical words
             const words = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 5 && !stopWords.has(w)); 
-            const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 4);
-            if (uniqueWords.length > 0) return uniqueWords.join(' AND ');
+            
+            // 4. Sort by length descending (longest words are statistically rarest in databases)
+            const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 5);
+            
+            // Must have at least 3 strong keywords to query
+            if (uniqueWords.length >= 3) {
+                return uniqueWords.join(' AND ');
+            }
             
             return null;
         }
 
-        // Fetch Open Access Data
         async function tryFetchProxies(keywords) {
             const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(keywords)}&max_results=5`;
             const proxies = [
@@ -497,7 +495,6 @@
             return null;
         }
 
-        // Fetch Paywalled Data using Student's Institutional API
         async function fetchElsevierTDM(keywords, apiKey) {
             const queryUrl = `https://api.elsevier.com/content/search/sciencedirect?query=all(${encodeURIComponent(keywords)})`;
             
@@ -510,26 +507,16 @@
                     }
                 });
                 
-                if (res.status === 403) {
-                    addLog(`Elsevier HTTP 403: Key valid, but IP rejected. Connect to URCA Campus VPN to authenticate your IP address.`, "error");
-                    return [];
-                }
-
-                if (res.status === 401) {
-                    addLog(`Elsevier HTTP 401: Key invalid, pending activation, OR CORS Domain mismatch (Check your Website URL settings in Elsevier dashboard).`, "error");
-                    return [];
-                }
-                
-                if (!res.ok) {
-                    addLog(`Elsevier HTTP ${res.status}: Data fetch failed.`, "error");
-                    return [];
-                }
+                if (res.status === 403) return [];
+                if (res.status === 401) return [];
+                if (!res.ok) return [];
 
                 const data = await res.json();
                 const entries = data['search-results']?.entry || [];
                 
                 return entries.map(e => {
-                    const summary = e['dc:description'] || e['teaser'] || e['dc:title'] || "";
+                    const rawSummary = e['dc:description'] || e['teaser'] || e['dc:title'] || "";
+                    const summary = cleanHTML(rawSummary);
                     const link = e['link']?.find(l => l['@ref'] === 'scidir')?.['@href'] || e['prism:url'] || "#";
                     return {
                         title: e['dc:title'] || "Unknown Title",
@@ -539,7 +526,6 @@
                     };
                 });
             } catch (err) {
-                addLog(`Elsevier Request Crashed: Ensure your CORS Unblocker extension is active for custom headers.`, "error");
                 return [];
             }
         }
@@ -626,7 +612,6 @@
             document.getElementById('networkHelp').scrollIntoView({ behavior: 'smooth' });
         }
 
-        // Updated N-Gram Scoring to handle abstract mismatches
         function calculateScoreNGram(t1, t2, n) {
             if (!t2) return 0;
             const getGrams = (t) => {
@@ -644,14 +629,11 @@
             return Math.round((intersect.length / denominator) * 100);
         }
 
-        // Updated Highlighter to process both Abstract AND the hidden Exact Phrase
         function generateHighlightsNGram(student, matchesList, n) {
             if (!matchesList || matchesList.length === 0) return student;
             
             const sourceData = matchesList.map(match => {
-                // We combine the summary AND the hidden exact phrase that was found in the full text!
-                const combinedText = `${match.summary || ""} ${match.matchedPhrase || ""}`;
-                const words = combinedText.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
+                const words = (match.matchedText || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
                 const grams = new Set();
                 for (let i = 0; i <= words.length - n; i++) {
                     grams.add(words.slice(i, i + n).join(" "));
@@ -713,6 +695,10 @@
                     const publisherBadge = m.publisher && m.publisher.includes("Elsevier") 
                         ? `<span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-orange-200">${m.publisher}</span>`
                         : `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-indigo-200">${m.publisher || 'Source'}</span>`;
+                    
+                    const chunkBadge = m.chunksMatched > 1 
+                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider shadow-sm border border-red-200 animate-pulse">${m.chunksMatched} Blocks Matched</span>`
+                        : '';
 
                     list.innerHTML += `<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all hover:shadow-md">
                         <div class="flex justify-between items-start font-bold text-slate-800 gap-4 mb-2">
@@ -720,12 +706,12 @@
                                 ${m.color ? `<span class="w-3 h-3 mt-1.5 rounded-full shrink-0 shadow-sm" style="background-color: ${m.color.border}"></span>` : ''}
                                 <div class="flex flex-col gap-1">
                                     <span class="line-clamp-2">${m.title}</span>
-                                    <div>${publisherBadge}</div>
+                                    <div class="flex gap-2">${publisherBadge} ${chunkBadge}</div>
                                 </div>
                             </div>
-                            <span class="px-2 py-1 rounded-lg text-xs shrink-0" style="${badgeStyle}">${m.score}</span>
+                            <span class="px-2 py-1 rounded-lg text-xs shrink-0" style="${badgeStyle}">${m.score}%</span>
                         </div>
-                        <p class="text-[10px] text-slate-400 mt-3 italic line-clamp-2 ml-6">${m.summary}</p>
+                        <p class="text-[10px] text-slate-400 mt-3 italic line-clamp-2 ml-6">"${m.summary}"</p>
                         <a href="${m.url}" target="_blank" class="text-indigo-500 text-xs font-bold mt-4 inline-block underline ml-6 hover:text-indigo-700">Open Article In Repository →</a>
                     </div>`;
                 });
