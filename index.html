@@ -35,7 +35,7 @@
                 <h1 class="text-3xl font-black tracking-tight flex items-center gap-3">
                     <i data-lucide="shield-check"></i> Scanner AI Pro
                 </h1>
-                <p class="text-indigo-200 text-xs mt-2 font-bold uppercase tracking-widest">PhD Edition | Technical Anchor Engine</p>
+                <p class="text-indigo-200 text-xs mt-2 font-bold uppercase tracking-widest">PhD Edition | Density Window Engine</p>
             </div>
             <div id="apiStatus" class="hidden md:flex items-center gap-2 bg-indigo-800 px-4 py-2 rounded-full text-xs font-bold border border-indigo-700">
                 <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span> Intelligent Auto-Cascade Mesh
@@ -59,6 +59,7 @@
         <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="p-6 space-y-6">
                 
+                <!-- Institutional API Settings -->
                 <div id="apiSettingsBlock" class="hidden bg-slate-50 border border-slate-200 p-5 rounded-2xl space-y-3">
                     <h3 class="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
                         <i data-lucide="key" class="w-4 h-4"></i> Advanced Publisher Integrations (TDM)
@@ -92,14 +93,22 @@
                     </div>
                     <div id="sourceContainer" class="space-y-2">
                         <label class="text-[10px] font-black uppercase text-slate-400 ml-1">Reference Source (Local Mode)</label>
-                        <textarea id="sourceText" class="w-full h-64 p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all text-slate-700 leading-relaxed resize-none" placeholder="Paste source to compare..."></textarea>
+                        <textarea id="sourceText" class="w-full h-64 p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-indigo-500 outline-none transition-all text-slate-700 leading-relaxed resize-none" placeholder="Paste the manual source to compare against..."></textarea>
                     </div>
+                </div>
+
+                <div id="deepInfo" class="hidden bg-indigo-50 border border-indigo-100 p-4 rounded-2xl mb-4">
+                    <p class="text-sm text-indigo-700 font-medium flex items-center gap-2">
+                        <i data-lucide="info" class="w-4 h-4"></i> 
+                        Deep Scan features Auto-Cascade. If your region blocks the AI API, it will automatically route your scan to the Global Database Engine.
+                    </p>
                 </div>
 
                 <button onclick="handleScan()" id="scanBtn" class="w-full py-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-lg shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-3">
                     <i data-lucide="search" id="scanIcon"></i> <span id="btnText">Analyze All Sources</span>
                 </button>
 
+                <!-- Process Log -->
                 <div id="logSection" class="hidden space-y-2">
                     <div class="flex justify-between items-center">
                         <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 font-bold">Process Analytics</label>
@@ -113,6 +122,15 @@
                     <div id="processLog" class="w-full h-40 p-3 bg-slate-900 rounded-xl overflow-y-auto text-[11px] leading-tight shadow-inner text-indigo-300"></div>
                 </div>
             </div>
+        </div>
+
+        <!-- Manual Verification Bypass -->
+        <div id="networkHelp" class="hidden bg-amber-50 border border-amber-200 p-6 rounded-3xl space-y-4 shadow-sm">
+            <h3 class="font-bold text-amber-800 flex items-center gap-2 text-lg">
+                <i data-lucide="globe-lock"></i> All Automation Layers Exhausted
+            </h3>
+            <p class="text-sm text-amber-700">Both the AI Engine and the Global Databases encountered dead ends or zero matches for these specific segments. <strong>Please use your local browser to verify these segments manually:</strong></p>
+            <div id="manualLinksContainer" class="flex flex-col gap-3"></div>
         </div>
 
         <!-- Results Display -->
@@ -133,13 +151,24 @@
                 </div>
             </div>
 
-            <div id="segmentedContainer" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-                <div class="p-6 bg-slate-50 border-b border-slate-100 font-bold text-xs uppercase tracking-widest text-slate-500">
-                    <span>Full-Sentence Integrity Highlighting</span>
+            <!-- AI Assessment -->
+            <div id="aiAnalysisContainer" class="hidden bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-6 bg-indigo-900 text-white font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i> AI Assessment Report
                 </div>
-                <div id="highlightReport" class="p-8 text-lg leading-loose text-slate-700 whitespace-pre-wrap font-medium"></div>
+                <div id="aiAnalysisBody" class="p-8 text-slate-700 leading-relaxed prose prose-indigo max-w-none"></div>
             </div>
 
+            <!-- Segmented Highlighting -->
+            <div id="segmentedContainer" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-6 bg-slate-50 border-b border-slate-100 font-bold text-xs uppercase tracking-widest text-slate-500 flex justify-between items-center">
+                    <span>Strict Sequence Highlighting</span>
+                    <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded uppercase font-bold tracking-widest">Solid Contiguous Blocks Only</span>
+                </div>
+                <div id="highlightReport" class="p-8 text-lg leading-loose text-slate-700 whitespace-pre-wrap"></div>
+            </div>
+
+            <!-- Source Cards -->
             <div id="globalSources" class="hidden space-y-4">
                 <h3 class="font-black text-slate-400 text-xs uppercase tracking-[0.2em] ml-2 font-bold text-indigo-900">Detected Source Papers</h3>
                 <div id="sourcesList" class="space-y-4"></div>
@@ -151,11 +180,16 @@
         let currentTab = 'local';
         const apiKey = ""; 
 
+        // Distinct colors for different source highlights
         const colorPalette = [
-            { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' },
-            { bg: '#e0e7ff', border: '#6366f1', text: '#3730a3' },
-            { bg: '#dcfce7', border: '#22c55e', text: '#166534' },
-            { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' }
+            { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' }, // Red
+            { bg: '#e0e7ff', border: '#6366f1', text: '#3730a3' }, // Indigo
+            { bg: '#dcfce7', border: '#22c55e', text: '#166534' }, // Green
+            { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' }, // Amber
+            { bg: '#fce7f3', border: '#ec4899', text: '#9d174d' }, // Pink
+            { bg: '#ccfbf1', border: '#14b8a6', text: '#115e59' }, // Teal
+            { bg: '#f3e8ff', border: '#a855f7', text: '#6b21a8' }, // Purple
+            { bg: '#ffedd5', border: '#f97316', text: '#9a3412' }  // Orange
         ];
 
         lucide.createIcons();
@@ -171,10 +205,27 @@
             logSection.classList.remove('hidden');
             const entry = document.createElement('div');
             entry.className = `log-entry log-${type}`;
-            const time = new Date().toLocaleTimeString([], { hour12: false });
+            const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
             entry.innerHTML = `<span class="opacity-50 text-slate-400 font-mono text-[9px] mr-2">[${time}]</span> ${message}`;
             logElement.appendChild(entry);
             logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function copyLogToClipboard() {
+            const logElement = document.getElementById('processLog');
+            const text = logElement.innerText;
+            const tempInput = document.createElement('textarea');
+            tempInput.value = text;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            addLog("Process log saved to clipboard.", "success");
+        }
+
+        function clearLog() {
+            document.getElementById('processLog').innerHTML = '';
+            document.getElementById('logSection').classList.add('hidden');
         }
 
         function switchTab(tab) {
@@ -184,210 +235,546 @@
                 if (t === tab) el.classList.add('tab-active');
                 else el.classList.remove('tab-active', 'text-white');
             });
+            
             document.getElementById('sourceContainer').style.display = tab === 'local' ? 'block' : 'none';
+            document.getElementById('deepInfo').classList.toggle('hidden', tab !== 'deep');
+            
             const apiSettings = document.getElementById('apiSettingsBlock');
-            apiSettings.classList.toggle('hidden', tab === 'local');
+            if (tab === 'global' || tab === 'deep') {
+                apiSettings.classList.remove('hidden');
+            } else {
+                apiSettings.classList.add('hidden');
+            }
+
             document.getElementById('resultsArea').classList.add('hidden');
+            document.getElementById('networkHelp').classList.add('hidden');
+            addLog(`Active Engine: ${tab.toUpperCase()}`, 'info');
+            lucide.createIcons();
         }
 
         async function testElsevierAPI() {
             const key = document.getElementById('elsevierKey').value.trim();
-            if (!key) return alert("Enter key.");
-            const res = await fetch(`https://api.elsevier.com/content/search/sciencedirect?query=test`, { 
-                method: 'GET', headers: { 'X-ELS-APIKey': key, 'Accept': 'application/json' }
-            });
-            if (res.ok) alert("Connection Successful!");
-            else alert("Connection Failed. Check IP/Key.");
+            if (!key) return alert("Please enter an Elsevier API Key first.");
+
+            const btn = document.getElementById('testApiBtn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Testing...`;
+            lucide.createIcons();
+
+            clearLog();
+            addLog(`Testing Elsevier API Connection with key: ${key.substring(0, 5)}...`, 'info');
+
+            const queryUrl = `https://api.elsevier.com/content/search/sciencedirect?query=test`;
+            
+            try {
+                const res = await fetch(queryUrl, { 
+                    method: 'GET',
+                    headers: { 
+                        'X-ELS-APIKey': key,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (res.status === 200) {
+                    addLog("SUCCESS! Elsevier accepted your API Key and Network IP.", "success");
+                    alert("Connection Successful! Your key and IP address are authorized by Elsevier.");
+                } else if (res.status === 403) {
+                    addLog(`HTTP 403 Forbidden. Your key is valid, but your CURRENT IP ADDRESS is not recognized as a campus network. Connect to the university VPN.`, "error");
+                    alert("HTTP 403: IP Blocked.\nElsevier sees your API key, but is rejecting your internet connection. You must be on the University VPN.");
+                } else if (res.status === 401) {
+                    addLog(`HTTP 401 Unauthorized. Key invalid, pending activation, OR CORS Domain mismatch.`, "error");
+                    alert("HTTP 401: Unauthorized.\n1. The key is incorrect or pending activation.\n2. CORS Domain Mismatch: The 'Website URL' you registered on Elsevier doesn't match your local file. Change the CORS setting in your Elsevier dashboard to '*' (asterisk).");
+                } else {
+                    addLog(`HTTP ${res.status}: Unknown Error.`, "warning");
+                }
+            } catch (err) {
+                addLog(`Elsevier Request Crashed: Ensure your CORS Unblocker extension is active for custom headers.`, "error");
+                alert("Network Error: Ensure your CORS Unblocker browser extension is active.");
+            } finally {
+                btn.innerHTML = originalText;
+                lucide.createIcons();
+            }
         }
 
         async function handleScan() {
             const studentText = document.getElementById('studentText').value.trim();
-            if (!studentText) return;
+            if (!studentText || studentText.length < 20) return alert("Please enter a substantial technical text.");
+
             const btn = document.getElementById('scanBtn');
+            const btnText = document.getElementById('btnText');
             btn.disabled = true;
-            addLog(`Starting ${currentTab.toUpperCase()} integrity check...`);
+            btn.classList.add('opacity-50');
+            btnText.innerText = "Running Analysis...";
+            
+            addLog(`Starting ${currentTab.toUpperCase()} integrity check...`, 'info');
+
             try {
                 if (currentTab === 'local') runLocalScan(studentText);
-                else await runGlobalScan(studentText);
+                else if (currentTab === 'global') await runGlobalScan(studentText);
+                else await runDeepScan(studentText);
             } catch (err) {
-                addLog(`ERROR: ${err.message}`, 'error');
+                addLog(`CRITICAL ERROR: ${err.message}`, 'error');
+                showManualFallback(studentText);
             } finally {
                 btn.disabled = false;
+                btn.classList.remove('opacity-50');
+                btnText.innerText = "Analyze All Sources";
+                lucide.createIcons();
             }
         }
 
         function runLocalScan(studentText) {
             const sourceText = document.getElementById('sourceText').value.trim();
-            const score = calculateSimilarity(studentText, sourceText);
-            const matches = [{ title: "Manual Reference", summary: sourceText, url: "#", score: score, publisher: "Local", matchedChunks: [studentText] }];
-            displayResults(score, generateHighlightsStrict(studentText, matches), matches);
+            if (!sourceText) return alert("Source material required for local comparison.");
+            
+            const score = calculateScoreNGram(studentText, sourceText, 4);
+            const localMatches = [{
+                title: "Local Reference Source",
+                summary: sourceText,
+                url: "#",
+                score: score + "%",
+                color: colorPalette[0],
+                publisher: "Local"
+            }];
+
+            displayResults(score, generateHighlightsStrict(studentText, localMatches), localMatches, false);
         }
 
         async function runGlobalScan(studentText) {
-            // Step 1: Intelligent Sentence Chunking
-            let chunks = studentText.split(/[.!?]\s+|\n+/).filter(c => c.trim().length > 35);
-            addLog(`Global Engine: Analyzing ${chunks.length} technical segments.`, "info");
+            let chunks = studentText.split(/[.!?]\s+/).filter(c => c.trim().length > 30);
+            addLog(`Global Engine: Analyzing ${chunks.length} distinct sentence blocks.`, "info");
 
             const elsevierKey = document.getElementById('elsevierKey').value.trim();
             const includeArxiv = document.getElementById('includeArxiv').checked;
+
+            if (!elsevierKey && !includeArxiv) {
+                throw new Error("You must enable arXiv or provide an Elsevier API key to scan.");
+            }
+
+            if (elsevierKey) addLog("Institutional Elsevier API Key detected. Engaging ScienceDirect TDM...", "info");
+            if (includeArxiv) addLog("arXiv Open Access scan is ENABLED.", "info");
+            else addLog("arXiv Open Access scan is DISABLED by user.", "warning");
+
             const foundMap = new Map();
 
-            for (let chunk of chunks) {
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i].trim();
                 const searchKeywords = getTechnicalFingerprint(chunk);
                 if (!searchKeywords) continue;
 
-                addLog(`Scanning Segment: [${searchKeywords}]`, "info");
+                addLog(`Scanning Block ${i+1}: Query -> [${searchKeywords}]`, "info");
                 
+                const isExact = searchKeywords.startsWith('"');
+                const plainPhrase = searchKeywords.replace(/"/g, '');
+
                 const processEntry = (title, summary, url, publisher) => {
                     if (foundMap.has(title)) {
-                        const entry = foundMap.get(title);
-                        if (!entry.matchedChunks.includes(chunk)) entry.matchedChunks.push(chunk);
+                        foundMap.get(title).chunksMatched++;
+                        if (isExact) foundMap.get(title).exactPhrases.push(plainPhrase);
+                        // NEW: Track the entire student sentence block that triggered this match
+                        if (!foundMap.get(title).matchedChunks.includes(chunk)) {
+                            foundMap.get(title).matchedChunks.push(chunk);
+                        }
                     } else {
-                        foundMap.set(title, { title, summary, url, publisher, matchedChunks: [chunk] });
+                        foundMap.set(title, {
+                            title, summary, url, publisher, chunksMatched: 1, 
+                            exactPhrases: isExact ? [plainPhrase] : [],
+                            matchedChunks: [chunk] // NEW: Store the full sentence block
+                        });
                     }
                 };
 
+                // 1. Search Open Access arXiv
                 if (includeArxiv) {
-                    const xmlText = await tryFetchArxiv(searchKeywords);
+                    const xmlText = await tryFetchProxies(searchKeywords);
                     if (xmlText) {
                         const xml = new DOMParser().parseFromString(xmlText, "text/xml");
-                        Array.from(xml.getElementsByTagName("entry")).forEach(e => {
-                            processEntry(e.getElementsByTagName("title")[0].textContent, cleanHTML(e.getElementsByTagName("summary")[0].textContent), e.getElementsByTagName("id")[0].textContent, "arXiv");
-                        });
+                        const entries = Array.from(xml.getElementsByTagName("entry"));
+                        if (entries.length > 0) {
+                            addLog(`arXiv returned ${entries.length} matches.`, "success");
+                            entries.forEach(e => {
+                                const title = (e.getElementsByTagName("title")[0]?.textContent || "").trim();
+                                const summary = cleanHTML(e.getElementsByTagName("summary")[0]?.textContent || "");
+                                const url = (e.getElementsByTagName("id")[0]?.textContent || "").trim();
+                                processEntry(title, summary, url, "arXiv Open Access");
+                            });
+                        }
                     }
                 }
 
+                // 2. Search Elsevier if Key exists
                 if (elsevierKey) {
-                    const res = await fetch(`https://api.elsevier.com/content/search/sciencedirect?query=all(${encodeURIComponent(searchKeywords)})`, {
-                        headers: { 'X-ELS-APIKey': elsevierKey, 'Accept': 'application/json' }
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        (data['search-results']?.entry || []).forEach(e => {
-                            processEntry(e['dc:title'], cleanHTML(e['dc:description'] || e['teaser']), e['link']?.find(l => l['@ref'] === 'scidir')?.['@href'], "Elsevier");
+                    const elsevierResults = await fetchElsevierTDM(searchKeywords, elsevierKey);
+                    if (elsevierResults.length > 0) {
+                        addLog(`Elsevier returned ${elsevierResults.length} matches.`, "success");
+                        elsevierResults.forEach(r => {
+                            processEntry(r.title, r.summary, r.url, r.publisher);
                         });
                     }
                 }
             }
+
+            if (foundMap.size === 0) throw new Error("No database matches found across queried publishers.");
 
             let matchesList = [];
-            let maxScore = 0;
+            let maxTotalScore = 0;
             
             foundMap.forEach((entry) => {
-                const abstractScore = calculateSimilarity(studentText, entry.summary);
-                // If it found a specific technical anchor, it's a confirmed match even if abstract is different
-                let finalScore = entry.matchedChunks.length >= 2 ? 95 : Math.max(abstractScore, 85);
+                // Strict sequence overlap check against abstract (n=4)
+                const abstractScore = calculateScoreNGram(studentText, entry.summary, 4);
+                let finalScore = abstractScore;
                 
-                if (finalScore > maxScore) maxScore = finalScore;
-                matchesList.push({ ...entry, score: finalScore });
+                // If we successfully queried an exact phrase, we mathematically KNOW it is in the full text.
+                // We boost the score significantly even if the abstract is completely different.
+                if (entry.exactPhrases.length > 0) {
+                    finalScore = Math.max(finalScore, 85 + (entry.exactPhrases.length * 2)); 
+                } 
+                else if (entry.chunksMatched >= 2 && finalScore < 85) {
+                    finalScore = 85 + Math.min(10, abstractScore); 
+                } 
+                else if (entry.chunksMatched === 1 && finalScore < 10 && entry.exactPhrases.length === 0) {
+                    return; // Ignore false positive AND-matches with 0 sequence overlap
+                }
+                
+                if (finalScore > 0) {
+                    if (finalScore > maxTotalScore) maxTotalScore = finalScore;
+                    matchesList.push({ ...entry, score: finalScore }); 
+                }
             });
 
-            matchesList.sort((a,b) => b.score - a.score);
-            matchesList.forEach((m, idx) => m.color = colorPalette[idx % colorPalette.length]);
+            if (matchesList.length === 0) throw new Error("No continuous sequences found in database matches.");
 
-            displayResults(maxScore, generateHighlightsStrict(studentText, matchesList), matchesList);
+            matchesList.sort((a,b) => b.score - a.score);
+            matchesList.forEach((m, idx) => {
+                m.color = colorPalette[idx % colorPalette.length];
+                m.score = m.score > 100 ? 100 : m.score; 
+            });
+
+            // Use the NEW STRICT HIGHLIGHTER
+            const highlightedHTML = generateHighlightsStrict(studentText, matchesList);
+            displayResults(maxTotalScore > 100 ? 100 : maxTotalScore, highlightedHTML, matchesList, false);
         }
 
-        // NEW: Technical Anchor Extraction Logic
+        // UPGRADED: DENSITY WINDOW EXTRACTION ENGINE
         function getTechnicalFingerprint(text) {
-            // 1. Strip Boilerplate, Figures, and Citations
-            let cleanText = text.replace(/\[.*?\]/g, '') // Strip [20]
-                               .replace(/Fig\.\s*\d+/gi, '') // Strip Fig. 1
-                               .replace(/Figure\s*\d+/gi, ''); // Strip Figure 1
+            // 1. Completely strip all academic citations [1], [4,5], etc.
+            let cleanText = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '');
             
-            // 2. Ignore Academic Filler words
-            const filler = new Set(['consists', 'considered', 'initially', 'exposed', 'according', 'following', 'relationship', 'between', 'studied', 'proposed', 'suggested', 'results', 'presents', 'achieves', 'however', 'therefore', 'furthermore', 'namely', 'consists', 'consisting']);
+            // 2. Split into clauses to prevent punctuation from breaking exact phrases
+            const clauses = cleanText.split(/[.,;:!?\n]/);
             
-            const words = cleanText.split(/\s+/).filter(w => w.length > 0);
-            const windowSize = 7;
-            let bestWindow = "";
-            let highestDensity = 0;
+            let bestPhrase = "";
+            let maxScore = 0;
 
-            // 3. Slide a window to find the highest technical density (Rare words concentration)
-            for (let i = 0; i <= words.length - windowSize; i++) {
-                const window = words.slice(i, i + windowSize);
-                const technicalScore = window.reduce((acc, word) => {
-                    const wClean = word.toLowerCase().replace(/[^\w]/g, '');
-                    if (filler.has(wClean)) return acc;
-                    return acc + (wClean.length > 6 ? 10 : (wClean.length > 4 ? 2 : 0));
-                }, 0);
+            for (let clause of clauses) {
+                // Clean weird characters but keep spaces for exact word matching
+                const words = clause.replace(/[^\w\s-]/g, '').trim().split(/\s+/).filter(w => w.length > 0);
+                
+                // The mathematical "Sliding Window" - We slide a 7-word window across the clause
+                const windowSize = 7;
+                if (words.length >= windowSize) {
+                    for (let i = 0; i <= words.length - windowSize; i++) {
+                        const windowWords = words.slice(i, i + windowSize);
+                        
+                        // Score this specific window based on how many LONG technical words it contains
+                        // Generic words (length < 5) like "the", "in", "to" score 0 points.
+                        let score = windowWords.reduce((sum, w) => w.length > 4 ? sum + w.length : sum, 0);
 
-                if (technicalScore > highestDensity) {
-                    highestDensity = technicalScore;
-                    bestWindow = window.join(' ').replace(/[^\w\s-]/g, '');
+                        // Keep the window with the absolute highest technical density
+                        if (score > maxScore) {
+                            maxScore = score;
+                            bestPhrase = windowWords.join(' ');
+                        }
+                    }
                 }
             }
 
-            if (highestDensity > 20) return `"${bestWindow}"`;
+            // We only use the Exact Phrase if it achieved a high enough technical density score (>=22 points)
+            // This mathematical threshold guarantees we drop boilerplate like "the system to be considered in this" 
+            if (bestPhrase && maxScore >= 22) {
+                return `"${bestPhrase}"`;
+            }
+
+            // FALLBACK: If the sentence is too short or doesn't have a dense 7-word window,
+            // we isolate the 5 absolute longest, rarest words in the sentence and combine them with AND.
+            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore', 'system', 'considered', 'work', 'consists', 'initially', 'exposed', 'certain', 'according', 'following', 'relationship', 'based', 'which', 'their', 'there', 'these', 'would', 'could', 'should', 'about', 'other', 'after', 'where', 'through', 'between']);
+            const words = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 5 && !stopWords.has(w)); 
+            const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 5);
             
-            // Fallback for very short sentences
-            return words.filter(w => w.length > 6).slice(0, 4).join(' AND ');
+            if (uniqueWords.length >= 3) return uniqueWords.join(' AND ');
+            
+            return null;
         }
 
-        async function tryFetchArxiv(keywords) {
-            const url = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(keywords)}&max_results=3`;
+        async function tryFetchProxies(keywords) {
+            const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(keywords)}&max_results=5`;
+            const proxies = [
+                { name: "CodeTabs", url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, type: 'text' },
+                { name: "AllOrigins", url: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, type: 'json' }
+            ];
+
+            for (const p of proxies) {
+                try {
+                    const res = await fetch(p.url(arxivUrl));
+                    if (!res.ok) continue;
+                    let text = p.type === 'json' ? (await res.json()).contents : await res.clone().text();
+                    if (text && text.includes('<entry>')) return text;
+                } catch (e) {}
+            }
+            return null;
+        }
+
+        async function fetchElsevierTDM(keywords, apiKey) {
+            const queryUrl = `https://api.elsevier.com/content/search/sciencedirect?query=all(${encodeURIComponent(keywords)})`;
+            
             try {
-                const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-                const data = await res.json();
-                return data.contents;
-            } catch (e) { return null; }
-        }
-
-        function calculateSimilarity(t1, t2) {
-            const cleanT = (t) => t.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 3);
-            const s1 = new Set(cleanT(t1));
-            const s2 = new Set(cleanT(t2));
-            if (s1.size === 0) return 0;
-            const intersect = [...s1].filter(x => s2.has(x));
-            return Math.round((intersect.length / s1.size) * 100);
-        }
-
-        // FULL SENTENCE HIGHLIGHTER
-        function generateHighlightsStrict(student, matches) {
-            const words = student.split(/\s+/);
-            const highlights = new Array(words.length).fill(null);
-
-            matches.forEach(m => {
-                m.matchedChunks.forEach(chunk => {
-                    const chunkWords = chunk.split(/\s+/);
-                    for (let i = 0; i <= words.length - chunkWords.length; i++) {
-                        let match = true;
-                        for (let j = 0; j < chunkWords.length; j++) {
-                            if (words[i+j].toLowerCase().replace(/[^\w]/g, '') !== chunkWords[j].toLowerCase().replace(/[^\w]/g, '')) {
-                                match = false; break;
-                            }
-                        }
-                        if (match) {
-                            for (let j = 0; j < chunkWords.length; j++) highlights[i+j] = m.color;
-                        }
+                const res = await fetch(queryUrl, { 
+                    method: 'GET',
+                    headers: { 
+                        'X-ELS-APIKey': apiKey,
+                        'Accept': 'application/json'
                     }
                 });
-            });
+                
+                if (res.status === 403 || res.status === 401 || !res.ok) return [];
 
-            return words.map((w, i) => highlights[i] ? `<span style="background-color: ${highlights[i].bg}; border-bottom: 2px solid ${highlights[i].border}; color: ${highlights[i].text}; padding: 0 2px;">${w}</span>` : w).join(' ');
+                const data = await res.json();
+                const entries = data['search-results']?.entry || [];
+                
+                return entries.map(e => {
+                    const rawSummary = e['dc:description'] || e['teaser'] || e['dc:title'] || "";
+                    const summary = cleanHTML(rawSummary);
+                    const link = e['link']?.find(l => l['@ref'] === 'scidir')?.['@href'] || e['prism:url'] || "#";
+                    return {
+                        title: e['dc:title'] || "Unknown Title",
+                        summary: summary,
+                        url: link,
+                        publisher: "Elsevier ScienceDirect"
+                    };
+                });
+            } catch (err) {
+                return [];
+            }
         }
 
-        function displayResults(score, html, sources) {
+        async function runDeepScan(studentText) {
+            addLog("Requesting AI search and cross-referencing...", "info");
+            const prompt = `Perform a PhD-level integrity scan on this text. Identify the SPECIFIC paper titles and authors if the text is copied. Check for ARTEMIS or EcoFair. If multiple sources are present, list them all. Text: "${studentText}"`;
+            
+            try {
+                addLog("Attempting connection with Google Search Grounding...", "info");
+                const result = await callGemini(prompt, true);
+                processAIResult(result);
+            } catch (err) {
+                addLog(`Live Search failed (${err.message}). Activating fallback to Internal Knowledge...`, "warning");
+                try {
+                    const result = await callGemini(prompt, false);
+                    processAIResult(result);
+                } catch (fallbackErr) {
+                    addLog(`AI Engine completely unreachable (${fallbackErr.message}). Automatically rerouting to Global Database Engine...`, "warning");
+                    await runGlobalScan(studentText);
+                }
+            }
+        }
+
+        function processAIResult(result) {
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "Analysis could not be generated.";
+            const attributions = result.candidates?.[0]?.groundingMetadata?.groundingAttributions || [];
+            addLog(`AI Check complete. Detected ${attributions.length} direct web matches.`, "success");
+            const sources = attributions.map(a => ({ title: a.web?.title || "Academic Source", url: a.web?.uri, score: "High Confidence Match", publisher: "Web Extraction" }));
+            displayResults("AI", text, sources, true);
+        }
+
+        async function callGemini(prompt, useSearch = false) {
+            const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: "Expert Integrity Assistant. Identify EXACT paper titles and links. Mention authors if known." }] }
+            };
+            if (useSearch) payload.tools = [{ "google_search": {} }];
+            
+            const fetchConfig = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            };
+
+            const routes = [
+                { name: "Direct", url: targetUrl },
+                { name: "CorsProxy", url: `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` },
+                { name: "ThingProxy", url: `https://thingproxy.freeboard.io/fetch/${targetUrl}` }
+            ];
+
+            let lastError;
+            for (const route of routes) {
+                try {
+                    const res = await fetch(route.url, fetchConfig);
+                    if (res.status === 403) throw new Error("HTTP 403"); 
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return await res.json();
+                } catch (e) {
+                    lastError = e;
+                    addLog(`AI Route '${route.name}' failed: ${e.message}`, "info");
+                }
+            }
+            throw lastError; 
+        }
+
+        function showManualFallback(text) {
+            const help = document.getElementById('networkHelp');
+            const container = document.getElementById('manualLinksContainer');
+            help.classList.remove('hidden');
+            container.innerHTML = "";
+            const chunks = text.split(/[.!?]\s+/).filter(c => c.length > 40).slice(0, 3);
+            chunks.forEach((c, i) => {
+                const q = c.trim().split(/\s+/).slice(0, 10).join(' ');
+                container.innerHTML += `<div class="bg-white/50 p-4 rounded-2xl border border-amber-200">
+                    <p class="text-[10px] font-bold text-amber-600 uppercase mb-2">Segment ${i+1}</p>
+                    <a href="https://www.google.com/search?q=%22${encodeURIComponent(q)}%22" target="_blank" class="bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold inline-block hover:bg-amber-700 transition-colors shadow-sm">
+                        <i data-lucide="search" class="w-3 h-3 inline mr-1"></i> Exact Phrase Search (Local Browser)
+                    </a>
+                </div>`;
+            });
+            lucide.createIcons();
+            document.getElementById('networkHelp').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function calculateScoreNGram(t1, t2, n) {
+            if (!t2) return 0;
+            const getGrams = (t) => {
+                const words = t.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
+                const grams = new Set();
+                for (let i = 0; i <= words.length - n; i++) grams.add(words.slice(i, i + n).join(" "));
+                return grams;
+            };
+            const g1 = getGrams(t1); 
+            const g2 = getGrams(t2); 
+            if (g1.size === 0 || g2.size === 0) return 0;
+            
+            const intersect = [...g1].filter(x => g2.has(x));
+            const denominator = Math.min(g1.size, g2.size); 
+            return Math.round((intersect.length / denominator) * 100);
+        }
+
+        // UPGRADED: FULL-CHUNK HIGHLIGHTER OVERRIDE
+        function generateHighlightsStrict(student, matchesList) {
+            if (!matchesList || matchesList.length === 0) return student;
+            
+            const studentWords = student.split(/\s+/);
+            const wordColors = new Array(studentWords.length).fill(null);
+
+            matchesList.forEach(match => {
+                // Rule 1: Abstract N-Gram Overlap (minimum 4 contiguous words)
+                const n = 4;
+                const sourceWords = (match.summary || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
+                const sourceGrams = new Set();
+                for (let i = 0; i <= sourceWords.length - n; i++) {
+                    sourceGrams.add(sourceWords.slice(i, i + n).join(" "));
+                }
+
+                for (let i = 0; i <= studentWords.length - n; i++) {
+                    const gram = studentWords.slice(i, i + n).join(" ").toLowerCase().replace(/[^\w\s]/g, "");
+                    if (sourceGrams.has(gram)) {
+                        for (let j = 0; j < n; j++) {
+                            if (!wordColors[i + j]) wordColors[i + j] = match.color;
+                        }
+                    }
+                }
+
+                // Rule 2: FULL CHUNK HIGHLIGHTING
+                // If the paper was confirmed via our Exact Phrase "Tracer Round" (>80% score), 
+                // we paint the ENTIRE sentence block that triggered it, just like Turnitin.
+                if (match.score >= 80 && match.matchedChunks && match.matchedChunks.length > 0) {
+                    match.matchedChunks.forEach(chunk => {
+                        const chunkWords = chunk.split(/\s+/).filter(w => w.length > 0);
+                        const cLen = chunkWords.length;
+                        if (cLen === 0) return;
+
+                        // Normalize the chunk to perfectly map to the student's text ignoring punctuation
+                        const cleanChunkWords = chunkWords.map(w => w.toLowerCase().replace(/[^\w\s]/g, ""));
+
+                        for (let i = 0; i <= studentWords.length - cLen; i++) {
+                            let isMatch = true;
+                            for (let j = 0; j < cLen; j++) {
+                                const studentGram = studentWords[i+j].toLowerCase().replace(/[^\w\s]/g, "");
+                                if (studentGram !== cleanChunkWords[j]) {
+                                    isMatch = false;
+                                    break;
+                                }
+                            }
+                            // If the whole sentence sequence matches, highlight every word in it
+                            if (isMatch) {
+                                for (let j = 0; j < cLen; j++) {
+                                    if (!wordColors[i + j]) wordColors[i + j] = match.color;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
+
+            const output = [];
+            for (let i = 0; i < studentWords.length; i++) {
+                if (wordColors[i]) {
+                    const c = wordColors[i];
+                    output.push(`<span style="background-color: ${c.bg}; border-bottom: 2px solid ${c.border}; color: ${c.text}; font-weight: 600; padding: 0 2px; border-radius: 2px; transition: all 0.2s;">${studentWords[i]}</span>`);
+                } else {
+                    output.push(studentWords[i]);
+                }
+            }
+            return output.join(" ");
+        }
+
+        function displayResults(score, content, matches, isAI) {
             document.getElementById('resultsArea').classList.remove('hidden');
-            document.getElementById('finalScore').innerText = score + "%";
-            document.getElementById('highlightReport').innerHTML = html;
+            document.getElementById('finalScore').innerText = score === "AI" ? "AI" : score + "%";
+            
+            const aiCont = document.getElementById('aiAnalysisContainer');
+            const segCont = document.getElementById('segmentedContainer');
+            
+            if (isAI) {
+                aiCont.classList.remove('hidden');
+                segCont.classList.add('hidden');
+                document.getElementById('aiAnalysisBody').innerHTML = content.replace(/\n/g, '<br>');
+            } else {
+                aiCont.classList.add('hidden');
+                segCont.classList.remove('hidden');
+                document.getElementById('highlightReport').innerHTML = content;
+            }
+
             const list = document.getElementById('sourcesList');
             list.innerHTML = "";
-            if (sources.length > 0) {
+            if (matches && matches.length > 0) {
                 document.getElementById('globalSources').classList.remove('hidden');
-                sources.forEach(s => {
-                    list.innerHTML += `<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
-                        <div>
-                            <h4 class="font-bold text-slate-800">${s.title}</h4>
-                            <p class="text-[10px] text-indigo-600 font-bold uppercase mt-1">${s.publisher} • Found via technical overlap</p>
+                matches.forEach(m => {
+                    const badgeStyle = m.color ? `background-color: ${m.color.bg}; color: ${m.color.text}; border: 1px solid ${m.color.border};` : 'background-color: #e0e7ff; color: #4f46e5;';
+                    const publisherBadge = m.publisher && m.publisher.includes("Elsevier") 
+                        ? `<span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-orange-200">${m.publisher}</span>`
+                        : `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-indigo-200">${m.publisher || 'Source'}</span>`;
+                    
+                    const chunkBadge = m.exactPhrases && m.exactPhrases.length > 0
+                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider shadow-sm border border-red-200 animate-pulse">Exact Full-Text Match</span>`
+                        : '';
+
+                    list.innerHTML += `<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all hover:shadow-md">
+                        <div class="flex justify-between items-start font-bold text-slate-800 gap-4 mb-2">
+                            <div class="flex items-start gap-3">
+                                ${m.color ? `<span class="w-3 h-3 mt-1.5 rounded-full shrink-0 shadow-sm" style="background-color: ${m.color.border}"></span>` : ''}
+                                <div class="flex flex-col gap-1">
+                                    <span class="line-clamp-2">${m.title}</span>
+                                    <div class="flex gap-2">${publisherBadge} ${chunkBadge}</div>
+                                </div>
+                            </div>
+                            <span class="px-2 py-1 rounded-lg text-xs shrink-0" style="${badgeStyle}">${m.score}%</span>
                         </div>
-                        <div class="text-right">
-                            <span class="text-lg font-black text-indigo-600">${s.score}%</span>
-                            <a href="${s.url}" target="_blank" class="block text-[10px] font-bold underline text-slate-400 mt-1">View Source</a>
-                        </div>
+                        <p class="text-[10px] text-slate-400 mt-3 italic line-clamp-2 ml-6">"${m.summary}"</p>
+                        <a href="${m.url}" target="_blank" class="text-indigo-500 text-xs font-bold mt-4 inline-block underline ml-6 hover:text-indigo-700">Open Article In Repository →</a>
                     </div>`;
                 });
+            } else {
+                document.getElementById('globalSources').classList.add('hidden');
             }
+            lucide.createIcons();
             document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth' });
         }
     </script>
