@@ -35,7 +35,7 @@
                 <h1 class="text-3xl font-black tracking-tight flex items-center gap-3">
                     <i data-lucide="shield-check"></i> Scanner AI Pro
                 </h1>
-                <p class="text-indigo-200 text-xs mt-2 font-bold uppercase tracking-widest">PhD Edition | Full-Spectrum Integrity Engine</p>
+                <p class="text-indigo-200 text-xs mt-2 font-bold uppercase tracking-widest">PhD Edition | Strict Sequence Engine</p>
             </div>
             <div id="apiStatus" class="hidden md:flex items-center gap-2 bg-indigo-800 px-4 py-2 rounded-full text-xs font-bold border border-indigo-700">
                 <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span> Intelligent Auto-Cascade Mesh
@@ -59,7 +59,7 @@
         <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="p-6 space-y-6">
                 
-                <!-- Institutional API Settings (Only visible in Global Mode) -->
+                <!-- Institutional API Settings -->
                 <div id="apiSettingsBlock" class="hidden bg-slate-50 border border-slate-200 p-5 rounded-2xl space-y-3">
                     <h3 class="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
                         <i data-lucide="key" class="w-4 h-4"></i> Advanced Publisher Integrations (TDM)
@@ -162,8 +162,8 @@
             <!-- Segmented Highlighting -->
             <div id="segmentedContainer" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="p-6 bg-slate-50 border-b border-slate-100 font-bold text-xs uppercase tracking-widest text-slate-500 flex justify-between items-center">
-                    <span>Color-Coded Segment Highlighting</span>
-                    <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded uppercase font-bold tracking-widest">N-Gram Verify</span>
+                    <span>Strict Sequence Highlighting</span>
+                    <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded uppercase font-bold tracking-widest">N-Gram & Exact Phrase Match</span>
                 </div>
                 <div id="highlightReport" class="p-8 text-lg leading-loose text-slate-700 whitespace-pre-wrap"></div>
             </div>
@@ -327,7 +327,7 @@
             const sourceText = document.getElementById('sourceText').value.trim();
             if (!sourceText) return alert("Source material required for local comparison.");
             
-            const score = calculateScoreNGram(studentText, sourceText, 3);
+            const score = calculateScoreNGram(studentText, sourceText, 4);
             const localMatches = [{
                 title: "Local Reference Source",
                 summary: sourceText,
@@ -337,11 +337,10 @@
                 publisher: "Local"
             }];
 
-            displayResults(score, generateHighlightsNGram(studentText, localMatches, 3), localMatches, false);
+            displayResults(score, generateHighlightsStrict(studentText, localMatches), localMatches, false);
         }
 
         async function runGlobalScan(studentText) {
-            // Split by sentence punctuation, avoiding single letters or numbers
             let chunks = studentText.split(/[.!?]\s+/).filter(c => c.trim().length > 30);
             addLog(`Global Engine: Analyzing ${chunks.length} distinct sentence blocks.`, "info");
 
@@ -356,7 +355,6 @@
             if (includeArxiv) addLog("arXiv Open Access scan is ENABLED.", "info");
             else addLog("arXiv Open Access scan is DISABLED by user.", "warning");
 
-            // Track cumulative chunks matched per paper
             const foundMap = new Map();
 
             for (let i = 0; i < chunks.length; i++) {
@@ -366,8 +364,20 @@
 
                 addLog(`Scanning Block ${i+1}: Query -> [${searchKeywords}]`, "info");
                 
-                // Keep track of the raw text of the chunk so we can highlight it perfectly later
-                const plainPhrase = searchKeywords.replace(/ AND /g, ' ');
+                const isExact = searchKeywords.startsWith('"');
+                const plainPhrase = searchKeywords.replace(/"/g, '');
+
+                const processEntry = (title, summary, url, publisher) => {
+                    if (foundMap.has(title)) {
+                        foundMap.get(title).chunksMatched++;
+                        if (isExact) foundMap.get(title).exactPhrases.push(plainPhrase);
+                    } else {
+                        foundMap.set(title, {
+                            title, summary, url, publisher, chunksMatched: 1, 
+                            exactPhrases: isExact ? [plainPhrase] : []
+                        });
+                    }
+                };
 
                 // 1. Search Open Access arXiv
                 if (includeArxiv) {
@@ -379,18 +389,9 @@
                             addLog(`arXiv returned ${entries.length} matches.`, "success");
                             entries.forEach(e => {
                                 const title = (e.getElementsByTagName("title")[0]?.textContent || "").trim();
-                                const rawSummary = (e.getElementsByTagName("summary")[0]?.textContent || "").trim();
-                                const summary = cleanHTML(rawSummary);
+                                const summary = cleanHTML(e.getElementsByTagName("summary")[0]?.textContent || "");
                                 const url = (e.getElementsByTagName("id")[0]?.textContent || "").trim();
-                                
-                                if (foundMap.has(title)) {
-                                    foundMap.get(title).chunksMatched++;
-                                    foundMap.get(title).matchedText += " " + chunk;
-                                } else {
-                                    foundMap.set(title, {
-                                        title, summary, url, publisher: "arXiv Open Access", chunksMatched: 1, matchedText: summary + " " + chunk
-                                    });
-                                }
+                                processEntry(title, summary, url, "arXiv Open Access");
                             });
                         }
                     }
@@ -402,15 +403,7 @@
                     if (elsevierResults.length > 0) {
                         addLog(`Elsevier returned ${elsevierResults.length} matches.`, "success");
                         elsevierResults.forEach(r => {
-                            if (foundMap.has(r.title)) {
-                                foundMap.get(r.title).chunksMatched++;
-                                // Append the student's chunk to the matched text to guarantee it gets highlighted
-                                foundMap.get(r.title).matchedText += " " + chunk;
-                            } else {
-                                r.chunksMatched = 1;
-                                r.matchedText = r.summary + " " + chunk;
-                                foundMap.set(r.title, r);
-                            }
+                            processEntry(r.title, r.summary, r.url, r.publisher);
                         });
                     }
                 }
@@ -422,19 +415,20 @@
             let maxTotalScore = 0;
             
             foundMap.forEach((entry) => {
-                // Calculate raw mathematical overlap of n-grams
-                const abstractScore = calculateScoreNGram(studentText, entry.matchedText, 3);
+                // Strict sequence overlap check against abstract (n=4)
+                const abstractScore = calculateScoreNGram(studentText, entry.summary, 4);
                 let finalScore = abstractScore;
                 
-                // MULTI-CHUNK OVERRIDE: 
-                // If a paper matched 2 or more distinct sentence chunks, it is mathematically impossible to be a coincidence.
-                // We override the score to 95% minimum.
-                if (entry.chunksMatched >= 2 && finalScore < 95) {
-                    finalScore = 95 + Math.min(5, abstractScore); 
+                // If we successfully queried an exact phrase, we mathematically KNOW it is in the full text.
+                // We boost the score significantly even if the abstract is completely different.
+                if (entry.exactPhrases.length > 0) {
+                    finalScore = Math.max(finalScore, 85 + (entry.exactPhrases.length * 2)); 
                 } 
-                // Filter out single-chunk "AND" keyword false positives that have zero actual overlap
-                else if (entry.chunksMatched === 1 && finalScore < 10) {
-                    return; 
+                else if (entry.chunksMatched >= 2 && finalScore < 85) {
+                    finalScore = 85 + Math.min(10, abstractScore); 
+                } 
+                else if (entry.chunksMatched === 1 && finalScore < 10 && entry.exactPhrases.length === 0) {
+                    return; // Ignore false positive AND-matches with 0 sequence overlap
                 }
                 
                 if (finalScore > 0) {
@@ -443,36 +437,38 @@
                 }
             });
 
-            if (matchesList.length === 0) throw new Error("No database matches found across queried publishers.");
+            if (matchesList.length === 0) throw new Error("No continuous sequences found in database matches.");
 
             matchesList.sort((a,b) => b.score - a.score);
             matchesList.forEach((m, idx) => {
                 m.color = colorPalette[idx % colorPalette.length];
-                m.score = m.score > 100 ? 100 : m.score; // Cap at 100%
+                m.score = m.score > 100 ? 100 : m.score; 
             });
 
-            const highlightedHTML = generateHighlightsNGram(studentText, matchesList, 3);
+            // Use the NEW STRICT HIGHLIGHTER
+            const highlightedHTML = generateHighlightsStrict(studentText, matchesList);
             displayResults(maxTotalScore > 100 ? 100 : maxTotalScore, highlightedHTML, matchesList, false);
         }
 
-        // NEW: "Long-Word AND Engine" (Completely bypasses Elsevier's rigid exact-phrase limitations)
+        // Exact Phrase Priority Extraction
         function getTechnicalFingerprint(text) {
-            // 1. Completely strip all academic citations [1], [4,5], etc.
             let cleanText = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '');
+            const clauses = cleanText.split(/[.,;:!?\n]/);
             
-            // 2. Ignore structural/common words completely
-            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore', 'which', 'their', 'there', 'these', 'those', 'would', 'could', 'should', 'about', 'other', 'after', 'where', 'through', 'between', 'during', 'under', 'over', 'within', 'without']);
-            
-            // 3. Extract purely analytical words
-            const words = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 5 && !stopWords.has(w)); 
-            
-            // 4. Sort by length descending (longest words are statistically rarest in databases)
-            const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 5);
-            
-            // Must have at least 3 strong keywords to query
-            if (uniqueWords.length >= 3) {
-                return uniqueWords.join(' AND ');
+            for (let clause of clauses) {
+                const words = clause.replace(/[^\w\s-]/g, '').trim().split(/\s+/).filter(w => w.length > 0);
+                if (words.length >= 7) {
+                    const candidatePhrase = words.slice(0, 7);
+                    if (candidatePhrase.some(w => w.length > 5)) {
+                        return `"${candidatePhrase.join(' ')}"`; // Strict Exact Phrase
+                    }
+                }
             }
+
+            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore']);
+            const words = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 5 && !stopWords.has(w)); 
+            const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 4);
+            if (uniqueWords.length > 0) return uniqueWords.join(' AND ');
             
             return null;
         }
@@ -507,9 +503,7 @@
                     }
                 });
                 
-                if (res.status === 403) return [];
-                if (res.status === 401) return [];
-                if (!res.ok) return [];
+                if (res.status === 403 || res.status === 401 || !res.ok) return [];
 
                 const data = await res.json();
                 const entries = data['search-results']?.entry || [];
@@ -629,33 +623,49 @@
             return Math.round((intersect.length / denominator) * 100);
         }
 
-        function generateHighlightsNGram(student, matchesList, n) {
+        // NEW: STRICT SEQUENCE HIGHLIGHTER
+        function generateHighlightsStrict(student, matchesList) {
             if (!matchesList || matchesList.length === 0) return student;
             
-            const sourceData = matchesList.map(match => {
-                const words = (match.matchedText || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
-                const grams = new Set();
-                for (let i = 0; i <= words.length - n; i++) {
-                    grams.add(words.slice(i, i + n).join(" "));
-                }
-                return { grams: grams, color: match.color };
-            });
-
             const studentWords = student.split(/\s+/);
             const wordColors = new Array(studentWords.length).fill(null);
 
-            for (let i = 0; i <= studentWords.length - n; i++) {
-                const gram = studentWords.slice(i, i + n).join(" ").toLowerCase().replace(/[^\w\s]/g, "");
-                
-                for (let s = 0; s < sourceData.length; s++) {
-                    if (sourceData[s].grams.has(gram)) {
+            matchesList.forEach(match => {
+                // Rule 1: Must be a continuous sequence of at least 4 words in the abstract
+                const n = 4;
+                const sourceWords = (match.summary || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
+                const sourceGrams = new Set();
+                for (let i = 0; i <= sourceWords.length - n; i++) {
+                    sourceGrams.add(sourceWords.slice(i, i + n).join(" "));
+                }
+
+                for (let i = 0; i <= studentWords.length - n; i++) {
+                    const gram = studentWords.slice(i, i + n).join(" ").toLowerCase().replace(/[^\w\s]/g, "");
+                    if (sourceGrams.has(gram)) {
                         for (let j = 0; j < n; j++) {
-                            if (!wordColors[i + j]) wordColors[i + j] = sourceData[s].color;
+                            if (!wordColors[i + j]) wordColors[i + j] = match.color;
                         }
-                        break; 
                     }
                 }
-            }
+
+                // Rule 2: Highlight EXACT Phrases that were successfully queried in Full Text
+                if (match.exactPhrases && match.exactPhrases.length > 0) {
+                    match.exactPhrases.forEach(phrase => {
+                        const phraseWords = phrase.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
+                        const pLen = phraseWords.length;
+                        if (pLen === 0) return;
+
+                        for (let i = 0; i <= studentWords.length - pLen; i++) {
+                            const gram = studentWords.slice(i, i + pLen).join(" ").toLowerCase().replace(/[^\w\s]/g, "");
+                            if (gram === phraseWords.join(" ")) {
+                                for (let j = 0; j < pLen; j++) {
+                                    if (!wordColors[i + j]) wordColors[i + j] = match.color;
+                                }
+                            }
+                        }
+                    });
+                }
+            });
 
             const output = [];
             for (let i = 0; i < studentWords.length; i++) {
@@ -696,8 +706,8 @@
                         ? `<span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-orange-200">${m.publisher}</span>`
                         : `<span class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-indigo-200">${m.publisher || 'Source'}</span>`;
                     
-                    const chunkBadge = m.chunksMatched > 1 
-                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider shadow-sm border border-red-200 animate-pulse">${m.chunksMatched} Blocks Matched</span>`
+                    const chunkBadge = m.exactPhrases && m.exactPhrases.length > 0
+                        ? `<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider shadow-sm border border-red-200 animate-pulse">Exact Full-Text Match</span>`
                         : '';
 
                     list.innerHTML += `<div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:border-indigo-300 transition-all hover:shadow-md">
