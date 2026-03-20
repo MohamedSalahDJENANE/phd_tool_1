@@ -75,7 +75,15 @@
                             <i data-lucide="activity" class="w-4 h-4"></i> Test Connection
                         </button>
                     </div>
-                    <p class="text-[10px] text-slate-400 leading-tight font-medium">Providing an Elsevier key enables deep-scanning of ScienceDirect. <strong class="text-amber-600">Note: Your network IP must match the university that issued the key.</strong></p>
+                    <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-2">
+                        <p class="text-[10px] text-slate-400 leading-tight font-medium">Providing an Elsevier key enables deep-scanning of ScienceDirect. <strong class="text-amber-600">Note: Your network IP must match the university that issued the key.</strong></p>
+                        
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" id="includeArxiv" class="sr-only peer" checked>
+                            <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                            <span class="ml-3 text-xs font-bold text-slate-600 uppercase tracking-widest">Include arXiv</span>
+                        </label>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="inputContainer">
@@ -334,10 +342,20 @@
             addLog(`Global Engine: Analyzing ${chunks.length} distinct sentence blocks.`, "info");
 
             const elsevierKey = document.getElementById('elsevierKey').value.trim();
+            const includeArxiv = document.getElementById('includeArxiv').checked;
+
+            if (!elsevierKey && !includeArxiv) {
+                throw new Error("You must enable arXiv or provide an Elsevier API key to scan.");
+            }
+
             if (elsevierKey) {
                 addLog("Institutional Elsevier API Key detected. Engaging ScienceDirect TDM...", "info");
+            } 
+            
+            if (includeArxiv) {
+                addLog("arXiv Open Access scan is ENABLED.", "info");
             } else {
-                addLog("No Elsevier key provided. Running standard Open Access (arXiv) scan...", "info");
+                addLog("arXiv Open Access scan is DISABLED by user.", "warning");
             }
 
             let foundEntries = [];
@@ -350,20 +368,22 @@
                 addLog(`Scanning Block ${i+1}: [${searchKeywords}]`, "info");
                 
                 // 1. Search Open Access arXiv
-                const xmlText = await tryFetchProxies(searchKeywords);
-                if (xmlText) {
-                    const xml = new DOMParser().parseFromString(xmlText, "text/xml");
-                    const entries = Array.from(xml.getElementsByTagName("entry"));
-                    if (entries.length > 0) {
-                        addLog(`arXiv returned ${entries.length} matches.`, "success");
-                        entries.forEach(e => {
-                            foundEntries.push({
-                                title: (e.getElementsByTagName("title")[0]?.textContent || "").trim(),
-                                summary: (e.getElementsByTagName("summary")[0]?.textContent || "").trim(),
-                                url: (e.getElementsByTagName("id")[0]?.textContent || "").trim(),
-                                publisher: "arXiv Open Access"
+                if (includeArxiv) {
+                    const xmlText = await tryFetchProxies(searchKeywords);
+                    if (xmlText) {
+                        const xml = new DOMParser().parseFromString(xmlText, "text/xml");
+                        const entries = Array.from(xml.getElementsByTagName("entry"));
+                        if (entries.length > 0) {
+                            addLog(`arXiv returned ${entries.length} matches.`, "success");
+                            entries.forEach(e => {
+                                foundEntries.push({
+                                    title: (e.getElementsByTagName("title")[0]?.textContent || "").trim(),
+                                    summary: (e.getElementsByTagName("summary")[0]?.textContent || "").trim(),
+                                    url: (e.getElementsByTagName("id")[0]?.textContent || "").trim(),
+                                    publisher: "arXiv Open Access"
+                                });
                             });
-                        });
+                        }
                     }
                 }
 
