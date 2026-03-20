@@ -371,10 +371,15 @@
                     if (foundMap.has(title)) {
                         foundMap.get(title).chunksMatched++;
                         if (isExact) foundMap.get(title).exactPhrases.push(plainPhrase);
+                        // NEW: Track the entire student sentence block that triggered this match
+                        if (!foundMap.get(title).matchedChunks.includes(chunk)) {
+                            foundMap.get(title).matchedChunks.push(chunk);
+                        }
                     } else {
                         foundMap.set(title, {
                             title, summary, url, publisher, chunksMatched: 1, 
-                            exactPhrases: isExact ? [plainPhrase] : []
+                            exactPhrases: isExact ? [plainPhrase] : [],
+                            matchedChunks: [chunk] // NEW: Store the full sentence block
                         });
                     }
                 };
@@ -651,7 +656,7 @@
             return Math.round((intersect.length / denominator) * 100);
         }
 
-        // UPGRADED: STRICT SEQUENCE HIGHLIGHTER
+        // UPGRADED: FULL-CHUNK HIGHLIGHTER OVERRIDE
         function generateHighlightsStrict(student, matchesList) {
             if (!matchesList || matchesList.length === 0) return student;
             
@@ -676,18 +681,30 @@
                     }
                 }
 
-                // Rule 2: Highlight EXACT phrases that triggered a Full-Text match
-                // Because we use sliding windows, this guarantees solid blocks of 7+ words are highlighted without fragmentation.
-                if (match.exactPhrases && match.exactPhrases.length > 0) {
-                    match.exactPhrases.forEach(phrase => {
-                        const phraseWords = phrase.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
-                        const pLen = phraseWords.length;
-                        if (pLen === 0) return;
+                // Rule 2: FULL CHUNK HIGHLIGHTING
+                // If the paper was confirmed via our Exact Phrase "Tracer Round" (>80% score), 
+                // we paint the ENTIRE sentence block that triggered it, just like Turnitin.
+                if (match.score >= 80 && match.matchedChunks && match.matchedChunks.length > 0) {
+                    match.matchedChunks.forEach(chunk => {
+                        const chunkWords = chunk.split(/\s+/).filter(w => w.length > 0);
+                        const cLen = chunkWords.length;
+                        if (cLen === 0) return;
 
-                        for (let i = 0; i <= studentWords.length - pLen; i++) {
-                            const gram = studentWords.slice(i, i + pLen).join(" ").toLowerCase().replace(/[^\w\s]/g, "");
-                            if (gram === phraseWords.join(" ")) {
-                                for (let j = 0; j < pLen; j++) {
+                        // Normalize the chunk to perfectly map to the student's text ignoring punctuation
+                        const cleanChunkWords = chunkWords.map(w => w.toLowerCase().replace(/[^\w\s]/g, ""));
+
+                        for (let i = 0; i <= studentWords.length - cLen; i++) {
+                            let isMatch = true;
+                            for (let j = 0; j < cLen; j++) {
+                                const studentGram = studentWords[i+j].toLowerCase().replace(/[^\w\s]/g, "");
+                                if (studentGram !== cleanChunkWords[j]) {
+                                    isMatch = false;
+                                    break;
+                                }
+                            }
+                            // If the whole sentence sequence matches, highlight every word in it
+                            if (isMatch) {
+                                for (let j = 0; j < cLen; j++) {
                                     if (!wordColors[i + j]) wordColors[i + j] = match.color;
                                 }
                             }
