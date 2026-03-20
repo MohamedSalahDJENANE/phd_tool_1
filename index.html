@@ -35,7 +35,7 @@
                 <h1 class="text-3xl font-black tracking-tight flex items-center gap-3">
                     <i data-lucide="shield-check"></i> Scanner AI Pro
                 </h1>
-                <p class="text-indigo-200 text-xs mt-2 font-bold uppercase tracking-widest">PhD Edition | Strict Sequence Engine</p>
+                <p class="text-indigo-200 text-xs mt-2 font-bold uppercase tracking-widest">PhD Edition | Density Window Engine</p>
             </div>
             <div id="apiStatus" class="hidden md:flex items-center gap-2 bg-indigo-800 px-4 py-2 rounded-full text-xs font-bold border border-indigo-700">
                 <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span> Intelligent Auto-Cascade Mesh
@@ -163,7 +163,7 @@
             <div id="segmentedContainer" class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                 <div class="p-6 bg-slate-50 border-b border-slate-100 font-bold text-xs uppercase tracking-widest text-slate-500 flex justify-between items-center">
                     <span>Strict Sequence Highlighting</span>
-                    <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded uppercase font-bold tracking-widest">N-Gram & Exact Phrase Match</span>
+                    <span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded uppercase font-bold tracking-widest">Solid Contiguous Blocks Only</span>
                 </div>
                 <div id="highlightReport" class="p-8 text-lg leading-loose text-slate-700 whitespace-pre-wrap"></div>
             </div>
@@ -450,25 +450,53 @@
             displayResults(maxTotalScore > 100 ? 100 : maxTotalScore, highlightedHTML, matchesList, false);
         }
 
-        // Exact Phrase Priority Extraction
+        // UPGRADED: DENSITY WINDOW EXTRACTION ENGINE
         function getTechnicalFingerprint(text) {
+            // 1. Completely strip all academic citations [1], [4,5], etc.
             let cleanText = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '');
+            
+            // 2. Split into clauses to prevent punctuation from breaking exact phrases
             const clauses = cleanText.split(/[.,;:!?\n]/);
             
+            let bestPhrase = "";
+            let maxScore = 0;
+
             for (let clause of clauses) {
+                // Clean weird characters but keep spaces for exact word matching
                 const words = clause.replace(/[^\w\s-]/g, '').trim().split(/\s+/).filter(w => w.length > 0);
-                if (words.length >= 7) {
-                    const candidatePhrase = words.slice(0, 7);
-                    if (candidatePhrase.some(w => w.length > 5)) {
-                        return `"${candidatePhrase.join(' ')}"`; // Strict Exact Phrase
+                
+                // The mathematical "Sliding Window" - We slide a 7-word window across the clause
+                const windowSize = 7;
+                if (words.length >= windowSize) {
+                    for (let i = 0; i <= words.length - windowSize; i++) {
+                        const windowWords = words.slice(i, i + windowSize);
+                        
+                        // Score this specific window based on how many LONG technical words it contains
+                        // Generic words (length < 5) like "the", "in", "to" score 0 points.
+                        let score = windowWords.reduce((sum, w) => w.length > 4 ? sum + w.length : sum, 0);
+
+                        // Keep the window with the absolute highest technical density
+                        if (score > maxScore) {
+                            maxScore = score;
+                            bestPhrase = windowWords.join(' ');
+                        }
                     }
                 }
             }
 
-            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore']);
+            // We only use the Exact Phrase if it achieved a high enough technical density score (>=22 points)
+            // This mathematical threshold guarantees we drop boilerplate like "the system to be considered in this" 
+            if (bestPhrase && maxScore >= 22) {
+                return `"${bestPhrase}"`;
+            }
+
+            // FALLBACK: If the sentence is too short or doesn't have a dense 7-word window,
+            // we isolate the 5 absolute longest, rarest words in the sentence and combine them with AND.
+            const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore', 'system', 'considered', 'work', 'consists', 'initially', 'exposed', 'certain', 'according', 'following', 'relationship', 'based', 'which', 'their', 'there', 'these', 'would', 'could', 'should', 'about', 'other', 'after', 'where', 'through', 'between']);
             const words = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 5 && !stopWords.has(w)); 
-            const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 4);
-            if (uniqueWords.length > 0) return uniqueWords.join(' AND ');
+            const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 5);
+            
+            if (uniqueWords.length >= 3) return uniqueWords.join(' AND ');
             
             return null;
         }
@@ -623,7 +651,7 @@
             return Math.round((intersect.length / denominator) * 100);
         }
 
-        // NEW: STRICT SEQUENCE HIGHLIGHTER
+        // UPGRADED: STRICT SEQUENCE HIGHLIGHTER
         function generateHighlightsStrict(student, matchesList) {
             if (!matchesList || matchesList.length === 0) return student;
             
@@ -631,7 +659,7 @@
             const wordColors = new Array(studentWords.length).fill(null);
 
             matchesList.forEach(match => {
-                // Rule 1: Must be a continuous sequence of at least 4 words in the abstract
+                // Rule 1: Abstract N-Gram Overlap (minimum 4 contiguous words)
                 const n = 4;
                 const sourceWords = (match.summary || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
                 const sourceGrams = new Set();
@@ -648,7 +676,8 @@
                     }
                 }
 
-                // Rule 2: Highlight EXACT Phrases that were successfully queried in Full Text
+                // Rule 2: Highlight EXACT phrases that triggered a Full-Text match
+                // Because we use sliding windows, this guarantees solid blocks of 7+ words are highlighted without fragmentation.
                 if (match.exactPhrases && match.exactPhrases.length > 0) {
                     match.exactPhrases.forEach(phrase => {
                         const phraseWords = phrase.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
