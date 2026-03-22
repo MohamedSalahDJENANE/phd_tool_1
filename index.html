@@ -327,21 +327,27 @@
             const sourceText = document.getElementById('sourceText').value.trim();
             if (!sourceText) return alert("Source material required for local comparison.");
             
-            const score = calculateScoreNGram(studentText, sourceText, 4);
+            // Generate highlights returns actual volumetric percentage now
             const localMatches = [{
                 title: "Local Reference Source",
                 summary: sourceText,
                 url: "#",
-                score: score + "%",
+                score: "Source Material",
                 color: colorPalette[0],
                 publisher: "Local"
             }];
 
-            displayResults(score, generateHighlightsStrict(studentText, localMatches), localMatches, false);
+            const highlightData = generateHighlightsStrict(studentText, localMatches);
+            displayResults(highlightData.percentage, highlightData.html, localMatches, false);
         }
 
         async function runGlobalScan(studentText) {
-            let chunks = studentText.split(/[.!?]\s+/).filter(c => c.trim().length > 30);
+            let chunks = studentText
+                .replace(/(et al\.|e\.g\.|i\.e\.|vs\.|Fig\.)/gi, match => match.replace('.', '___DOT___'))
+                .split(/[.!?]\s+/)
+                .map(c => c.replace(/___DOT___/g, '.'))
+                .filter(c => c.trim().length > 30);
+
             addLog(`Global Engine: Analyzing ${chunks.length} distinct sentence blocks.`, "info");
 
             const elsevierKey = document.getElementById('elsevierKey').value.trim();
@@ -358,6 +364,10 @@
             const foundMap = new Map();
 
             for (let i = 0; i < chunks.length; i++) {
+                if (i > 0) {
+                    await new Promise(r => setTimeout(r, 1200));
+                }
+
                 const chunk = chunks[i].trim();
                 const searchKeywords = getTechnicalFingerprint(chunk);
                 if (!searchKeywords) continue;
@@ -367,37 +377,81 @@
                 const isExact = searchKeywords.startsWith('"');
                 const plainPhrase = searchKeywords.replace(/"/g, '');
 
-                const processEntry = (title, summary, url, publisher) => {
+                // CHANGED: We now pass 'isActuallyExact' into the function so it knows if a fuzzy fallback was used
+                const processEntry = (title, summary, url, publisher, isActuallyExact) => {
                     if (foundMap.has(title)) {
                         foundMap.get(title).chunksMatched++;
-                        if (isExact) foundMap.get(title).exactPhrases.push(plainPhrase);
-                        // NEW: Track the entire student sentence block that triggered this match
+                        if (isActuallyExact) foundMap.get(title).exactPhrases.push(plainPhrase);
                         if (!foundMap.get(title).matchedChunks.includes(chunk)) {
                             foundMap.get(title).matchedChunks.push(chunk);
                         }
                     } else {
                         foundMap.set(title, {
                             title, summary, url, publisher, chunksMatched: 1, 
-                            exactPhrases: isExact ? [plainPhrase] : [],
-                            matchedChunks: [chunk] // NEW: Store the full sentence block
+                            exactPhrases: isActuallyExact ? [plainPhrase] : [],
+                            matchedChunks: [chunk] 
                         });
                     }
                 };
 
                 // 1. Search Open Access arXiv
                 if (includeArxiv) {
-                    const xmlText = await tryFetchProxies(searchKeywords);
+                    let matchedExactly = isExact; // NEW: Track if we are still using the exact query
+                    let xmlText = await fetchArxivDirect(searchKeywords);
+                    
+                    if (!xmlText && isExact) {
+                        addLog(`Exact phrase missed, retrying with broader metadata net...`, "warning");
+                        
+                        // UPGRADED: Instead of relying on the 7-word window, we look at the ENTIRE chunk
+                        // and extract the 3 rarest, longest words to cast a much wider net on the metadata.
+                        const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore', 'system', 'considered', 'work', 'consists', 'initially', 'exposed', 'certain', 'according', 'following', 'relationship', 'based', 'which', 'their', 'there', 'these', 'would', 'could', 'should', 'about', 'other', 'after', 'where', 'through', 'between']);
+                        const chunkWords = chunk.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 5 && !stopWords.has(w));
+                        const broadQuery = [...new Set(chunkWords)].sort((a,b) => b.length - a.length).slice(0, 3).join(' AND ');
+                        
+                        if (broadQuery) {
+                            addLog(`Casting wider net: [${broadQuery}]`, "info");
+                            xmlText = await fetchArxivDirect(broadQuery);
+                            matchedExactly = false; // Flag this as NOT an exact match initially
+                        }
+                    }
+
                     if (xmlText) {
                         const xml = new DOMParser().parseFromString(xmlText, "text/xml");
                         const entries = Array.from(xml.getElementsByTagName("entry"));
                         if (entries.length > 0) {
-                            addLog(`arXiv returned ${entries.length} matches.`, "success");
-                            entries.forEach(e => {
+                            addLog(`arXiv returned ${entries.length} matches. Attempting full-text extraction...`, "info");
+                            for (const e of entries) {
                                 const title = (e.getElementsByTagName("title")[0]?.textContent || "").trim();
-                                const summary = cleanHTML(e.getElementsByTagName("summary")[0]?.textContent || "");
+                                let summary = cleanHTML(e.getElementsByTagName("summary")[0]?.textContent || "");
                                 const url = (e.getElementsByTagName("id")[0]?.textContent || "").trim();
-                                processEntry(title, summary, url, "arXiv Open Access");
-                            });
+                                
+                                const arxivId = url.split('/abs/')[1];
+                                if (arxivId) {
+                                    try {
+                                        const htmlUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://arxiv.org/html/' + arxivId)}`;
+                                        const ftRes = await fetch(htmlUrl);
+                                        if (ftRes.ok) {
+                                            const htmlContent = await ftRes.text();
+                                            if (!htmlContent.includes('Article not found') && htmlContent.length > 500) {
+                                                const doc = new DOMParser().parseFromString(htmlContent, "text/html");
+                                                summary = cleanHTML(doc.body.textContent);
+                                            }
+                                        }
+                                    } catch (err) { console.warn("arXiv HTML fetch failed, falling back to abstract."); }
+                                }
+
+                                // NEW: Retroactive Exact Match Check
+                                let entryIsExact = matchedExactly;
+                                const cleanSummary = summary.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
+                                const cleanPhrase = plainPhrase.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
+                                
+                                if (!entryIsExact && cleanSummary.includes(cleanPhrase)) {
+                                    entryIsExact = true;
+                                    addLog(`Exact sequence discovered hidden inside full-text of: ${title.substring(0, 25)}...`, "success");
+                                }
+
+                                processEntry(title, summary, url, "arXiv Open Access", entryIsExact);
+                            }
                         }
                     }
                 }
@@ -408,7 +462,17 @@
                     if (elsevierResults.length > 0) {
                         addLog(`Elsevier returned ${elsevierResults.length} matches.`, "success");
                         elsevierResults.forEach(r => {
-                            processEntry(r.title, r.summary, r.url, r.publisher);
+                            // NEW: Retroactive Exact Match Check for Elsevier
+                            let entryIsExact = isExact;
+                            const cleanSummary = r.summary.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
+                            const cleanPhrase = plainPhrase.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
+                            
+                            if (!entryIsExact && cleanSummary.includes(cleanPhrase)) {
+                                entryIsExact = true;
+                                addLog(`Exact sequence discovered hidden inside Elsevier full-text!`, "success");
+                            }
+
+                            processEntry(r.title, r.summary, r.url, r.publisher, entryIsExact);
                         });
                     }
                 }
@@ -417,28 +481,25 @@
             if (foundMap.size === 0) throw new Error("No database matches found across queried publishers.");
 
             let matchesList = [];
-            let maxTotalScore = 0;
             
             foundMap.forEach((entry) => {
                 // Strict sequence overlap check against abstract (n=4)
                 const abstractScore = calculateScoreNGram(studentText, entry.summary, 4);
-                let finalScore = abstractScore;
+                let confidenceScore = abstractScore;
                 
-                // If we successfully queried an exact phrase, we mathematically KNOW it is in the full text.
-                // We boost the score significantly even if the abstract is completely different.
+                // Calculate individual source Confidence Score (Not Volumetric)
                 if (entry.exactPhrases.length > 0) {
-                    finalScore = Math.max(finalScore, 85 + (entry.exactPhrases.length * 2)); 
+                    confidenceScore = Math.max(confidenceScore, 85 + (entry.exactPhrases.length * 2)); 
                 } 
-                else if (entry.chunksMatched >= 2 && finalScore < 85) {
-                    finalScore = 85 + Math.min(10, abstractScore); 
+                else if (entry.chunksMatched >= 2 && confidenceScore < 85) {
+                    confidenceScore = 85 + Math.min(10, abstractScore); 
                 } 
-                else if (entry.chunksMatched === 1 && finalScore < 10 && entry.exactPhrases.length === 0) {
-                    return; // Ignore false positive AND-matches with 0 sequence overlap
+                else if (entry.chunksMatched === 1 && confidenceScore < 10 && entry.exactPhrases.length === 0) {
+                    return; 
                 }
                 
-                if (finalScore > 0) {
-                    if (finalScore > maxTotalScore) maxTotalScore = finalScore;
-                    matchesList.push({ ...entry, score: finalScore }); 
+                if (confidenceScore > 0) {
+                    matchesList.push({ ...entry, score: confidenceScore > 100 ? 100 : confidenceScore }); 
                 }
             });
 
@@ -447,40 +508,29 @@
             matchesList.sort((a,b) => b.score - a.score);
             matchesList.forEach((m, idx) => {
                 m.color = colorPalette[idx % colorPalette.length];
-                m.score = m.score > 100 ? 100 : m.score; 
             });
 
-            // Use the NEW STRICT HIGHLIGHTER
-            const highlightedHTML = generateHighlightsStrict(studentText, matchesList);
-            displayResults(maxTotalScore > 100 ? 100 : maxTotalScore, highlightedHTML, matchesList, false);
+            // Use the Strict Highlighter to determine True Volumetric Score
+            const highlightData = generateHighlightsStrict(studentText, matchesList);
+            displayResults(highlightData.percentage, highlightData.html, matchesList, false);
         }
 
         // UPGRADED: DENSITY WINDOW EXTRACTION ENGINE
         function getTechnicalFingerprint(text) {
-            // 1. Completely strip all academic citations [1], [4,5], etc.
             let cleanText = text.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '');
-            
-            // 2. Split into clauses to prevent punctuation from breaking exact phrases
             const clauses = cleanText.split(/[.,;:!?\n]/);
             
             let bestPhrase = "";
             let maxScore = 0;
 
             for (let clause of clauses) {
-                // Clean weird characters but keep spaces for exact word matching
                 const words = clause.replace(/[^\w\s-]/g, '').trim().split(/\s+/).filter(w => w.length > 0);
-                
-                // The mathematical "Sliding Window" - We slide a 7-word window across the clause
                 const windowSize = 7;
                 if (words.length >= windowSize) {
                     for (let i = 0; i <= words.length - windowSize; i++) {
                         const windowWords = words.slice(i, i + windowSize);
-                        
-                        // Score this specific window based on how many LONG technical words it contains
-                        // Generic words (length < 5) like "the", "in", "to" score 0 points.
                         let score = windowWords.reduce((sum, w) => w.length > 4 ? sum + w.length : sum, 0);
 
-                        // Keep the window with the absolute highest technical density
                         if (score > maxScore) {
                             maxScore = score;
                             bestPhrase = windowWords.join(' ');
@@ -489,39 +539,51 @@
                 }
             }
 
-            // We only use the Exact Phrase if it achieved a high enough technical density score (>=22 points)
-            // This mathematical threshold guarantees we drop boilerplate like "the system to be considered in this" 
             if (bestPhrase && maxScore >= 22) {
                 return `"${bestPhrase}"`;
             }
 
-            // FALLBACK: If the sentence is too short or doesn't have a dense 7-word window,
-            // we isolate the 5 absolute longest, rarest words in the sentence and combine them with AND.
             const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore', 'system', 'considered', 'work', 'consists', 'initially', 'exposed', 'certain', 'according', 'following', 'relationship', 'based', 'which', 'their', 'there', 'these', 'would', 'could', 'should', 'about', 'other', 'after', 'where', 'through', 'between']);
-            const words = cleanText.toLowerCase().split(/[^a-z0-9-]/).filter(w => w.length > 5 && !stopWords.has(w)); 
+            const words = cleanText.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 5 && !stopWords.has(w)); 
             const uniqueWords = [...new Set(words)].sort((a,b) => b.length - a.length).slice(0, 5);
             
-            if (uniqueWords.length >= 3) return uniqueWords.join(' AND ');
+            if (uniqueWords.length >= 3) return uniqueWords.join(' AND '); 
             
             return null;
         }
 
-        async function tryFetchProxies(keywords) {
-            const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(keywords)}&max_results=5`;
-            const proxies = [
-                { name: "CodeTabs", url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, type: 'text' },
-                { name: "AllOrigins", url: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, type: 'json' }
+        async function fetchArxivDirect(keywords) {
+            let queryStr = keywords.includes(' AND ') 
+                ? keywords.split(' AND ').map(w => `all:${encodeURIComponent(w)}`).join('+AND+')
+                : `all:${encodeURIComponent(keywords)}`;
+            
+            const arxivUrl = `https://export.arxiv.org/api/query?search_query=${queryStr}&max_results=5`;
+            
+            const routes = [
+                { name: "Direct API", url: arxivUrl, type: 'text' },
+                { name: "AllOrigins", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(arxivUrl)}`, type: 'text' },
+                { name: "CodeTabs", url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(arxivUrl)}`, type: 'text' },
+                { name: "ThingProxy", url: `https://thingproxy.freeboard.io/fetch/${arxivUrl}`, type: 'text' }
             ];
 
-            for (const p of proxies) {
+            for (const route of routes) {
                 try {
-                    const res = await fetch(p.url(arxivUrl));
+                    const res = await fetch(route.url);
                     if (!res.ok) continue;
-                    let text = p.type === 'json' ? (await res.json()).contents : await res.clone().text();
-                    if (text && text.includes('<entry>')) return text;
-                } catch (e) {}
+                    
+                    let text = route.type === 'json' ? (await res.json()).contents : await res.text();
+                    
+                    if (text && text.includes('<feed')) {
+                        if (text.includes('<entry>')) return text; 
+                        return null; 
+                    }
+                } catch (e) {
+                    console.warn(`[Route Bypassed] ${route.name} failed.`);
+                }
             }
-            return null;
+            
+            console.warn(`ArXiv query exhausted all routes. Possible network block or strict rate limit applied.`);
+            return null; 
         }
 
         async function fetchElsevierTDM(keywords, apiKey) {
@@ -541,17 +603,37 @@
                 const data = await res.json();
                 const entries = data['search-results']?.entry || [];
                 
-                return entries.map(e => {
+                // CHANGED: Process entries asynchronously to fetch full text
+                let results = [];
+                for (const e of entries) {
                     const rawSummary = e['dc:description'] || e['teaser'] || e['dc:title'] || "";
-                    const summary = cleanHTML(rawSummary);
+                    let summary = cleanHTML(rawSummary);
                     const link = e['link']?.find(l => l['@ref'] === 'scidir')?.['@href'] || e['prism:url'] || "#";
-                    return {
+                    const pii = e['pii'];
+                    
+                    // NEW: Retrieval Phase (Elsevier Full Text)
+                    if (pii) {
+                        try {
+                            const ftRes = await fetch(`https://api.elsevier.com/content/article/pii/${pii}?httpAccept=text/plain`, {
+                                headers: { 'X-ELS-APIKey': apiKey }
+                            });
+                            if (ftRes.ok) {
+                                const fullText = await ftRes.text();
+                                if (fullText && fullText.length > 500) {
+                                    summary = cleanHTML(fullText); // Overwrite abstract with full plain text
+                                }
+                            }
+                        } catch (err) { console.warn("Elsevier full-text fetch failed."); }
+                    }
+
+                    results.push({
                         title: e['dc:title'] || "Unknown Title",
                         summary: summary,
                         url: link,
                         publisher: "Elsevier ScienceDirect"
-                    };
-                });
+                    });
+                }
+                return results;
             } catch (err) {
                 return [];
             }
@@ -656,15 +738,15 @@
             return Math.round((intersect.length / denominator) * 100);
         }
 
-        // UPGRADED: FULL-CHUNK HIGHLIGHTER OVERRIDE
+        // UPGRADED: Returns both HTML and true volumetric percentage
         function generateHighlightsStrict(student, matchesList) {
-            if (!matchesList || matchesList.length === 0) return student;
+            if (!matchesList || matchesList.length === 0) return { html: student, percentage: 0 };
             
             const studentWords = student.split(/\s+/);
             const wordColors = new Array(studentWords.length).fill(null);
 
             matchesList.forEach(match => {
-                // Rule 1: Abstract N-Gram Overlap (minimum 4 contiguous words)
+                // Rule 1: Abstract N-Gram Overlap
                 const n = 4;
                 const sourceWords = (match.summary || "").toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(w => w.length > 0);
                 const sourceGrams = new Set();
@@ -682,15 +764,12 @@
                 }
 
                 // Rule 2: FULL CHUNK HIGHLIGHTING
-                // If the paper was confirmed via our Exact Phrase "Tracer Round" (>80% score), 
-                // we paint the ENTIRE sentence block that triggered it, just like Turnitin.
                 if (match.score >= 80 && match.matchedChunks && match.matchedChunks.length > 0) {
                     match.matchedChunks.forEach(chunk => {
                         const chunkWords = chunk.split(/\s+/).filter(w => w.length > 0);
                         const cLen = chunkWords.length;
                         if (cLen === 0) return;
 
-                        // Normalize the chunk to perfectly map to the student's text ignoring punctuation
                         const cleanChunkWords = chunkWords.map(w => w.toLowerCase().replace(/[^\w\s]/g, ""));
 
                         for (let i = 0; i <= studentWords.length - cLen; i++) {
@@ -702,7 +781,6 @@
                                     break;
                                 }
                             }
-                            // If the whole sentence sequence matches, highlight every word in it
                             if (isMatch) {
                                 for (let j = 0; j < cLen; j++) {
                                     if (!wordColors[i + j]) wordColors[i + j] = match.color;
@@ -713,16 +791,21 @@
                 }
             });
 
+            // Calculate exact volumetric percentage
+            let matchedWordCount = 0;
             const output = [];
             for (let i = 0; i < studentWords.length; i++) {
                 if (wordColors[i]) {
+                    matchedWordCount++;
                     const c = wordColors[i];
                     output.push(`<span style="background-color: ${c.bg}; border-bottom: 2px solid ${c.border}; color: ${c.text}; font-weight: 600; padding: 0 2px; border-radius: 2px; transition: all 0.2s;">${studentWords[i]}</span>`);
                 } else {
                     output.push(studentWords[i]);
                 }
             }
-            return output.join(" ");
+            
+            const percentage = Math.round((matchedWordCount / studentWords.length) * 100);
+            return { html: output.join(" "), percentage: percentage };
         }
 
         function displayResults(score, content, matches, isAI) {
@@ -747,6 +830,8 @@
             if (matches && matches.length > 0) {
                 document.getElementById('globalSources').classList.remove('hidden');
                 matches.forEach(m => {
+                    // Display individual source confidence here
+                    const sourceScoreDisplay = m.score === "Source Material" ? "Source" : m.score + "% Match";
                     const badgeStyle = m.color ? `background-color: ${m.color.bg}; color: ${m.color.text}; border: 1px solid ${m.color.border};` : 'background-color: #e0e7ff; color: #4f46e5;';
                     const publisherBadge = m.publisher && m.publisher.includes("Elsevier") 
                         ? `<span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm border border-orange-200">${m.publisher}</span>`
@@ -765,7 +850,7 @@
                                     <div class="flex gap-2">${publisherBadge} ${chunkBadge}</div>
                                 </div>
                             </div>
-                            <span class="px-2 py-1 rounded-lg text-xs shrink-0" style="${badgeStyle}">${m.score}%</span>
+                            <span class="px-2 py-1 rounded-lg text-xs shrink-0 font-bold" style="${badgeStyle}">${sourceScoreDisplay}</span>
                         </div>
                         <p class="text-[10px] text-slate-400 mt-3 italic line-clamp-2 ml-6">"${m.summary}"</p>
                         <a href="${m.url}" target="_blank" class="text-indigo-500 text-xs font-bold mt-4 inline-block underline ml-6 hover:text-indigo-700">Open Article In Repository →</a>
