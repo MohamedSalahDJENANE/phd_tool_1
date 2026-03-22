@@ -178,7 +178,7 @@
 
     <script>
         let currentTab = 'local';
-        const apiKey = "AIzaSyABZt80xnMVpxxifgRrSaOgrL_rrIFDABc"; 
+        const apiKey = ""; 
 
         // Distinct colors for different source highlights
         const colorPalette = [
@@ -377,18 +377,17 @@
                 const isExact = searchKeywords.startsWith('"');
                 const plainPhrase = searchKeywords.replace(/"/g, '');
 
-                // CHANGED: We now pass 'isActuallyExact' into the function so it knows if a fuzzy fallback was used
-                const processEntry = (title, summary, url, publisher, isActuallyExact) => {
+                const processEntry = (title, summary, url, publisher) => {
                     if (foundMap.has(title)) {
                         foundMap.get(title).chunksMatched++;
-                        if (isActuallyExact) foundMap.get(title).exactPhrases.push(plainPhrase);
+                        if (isExact) foundMap.get(title).exactPhrases.push(plainPhrase);
                         if (!foundMap.get(title).matchedChunks.includes(chunk)) {
                             foundMap.get(title).matchedChunks.push(chunk);
                         }
                     } else {
                         foundMap.set(title, {
                             title, summary, url, publisher, chunksMatched: 1, 
-                            exactPhrases: isActuallyExact ? [plainPhrase] : [],
+                            exactPhrases: isExact ? [plainPhrase] : [],
                             matchedChunks: [chunk] 
                         });
                     }
@@ -396,22 +395,13 @@
 
                 // 1. Search Open Access arXiv
                 if (includeArxiv) {
-                    let matchedExactly = isExact; // NEW: Track if we are still using the exact query
                     let xmlText = await fetchArxivDirect(searchKeywords);
                     
                     if (!xmlText && isExact) {
-                        addLog(`Exact phrase missed, retrying with broader metadata net...`, "warning");
-                        
-                        // UPGRADED: Instead of relying on the 7-word window, we look at the ENTIRE chunk
-                        // and extract the 3 rarest, longest words to cast a much wider net on the metadata.
-                        const stopWords = new Set(['however', 'framework', 'introduces', 'paper', 'novel', 'presents', 'achieves', 'therefore', 'furthermore', 'system', 'considered', 'work', 'consists', 'initially', 'exposed', 'certain', 'according', 'following', 'relationship', 'based', 'which', 'their', 'there', 'these', 'would', 'could', 'should', 'about', 'other', 'after', 'where', 'through', 'between']);
-                        const chunkWords = chunk.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 5 && !stopWords.has(w));
-                        const broadQuery = [...new Set(chunkWords)].sort((a,b) => b.length - a.length).slice(0, 3).join(' AND ');
-                        
-                        if (broadQuery) {
-                            addLog(`Casting wider net: [${broadQuery}]`, "info");
-                            xmlText = await fetchArxivDirect(broadQuery);
-                            matchedExactly = false; // Flag this as NOT an exact match initially
+                        addLog(`Exact phrase missed, retrying with fuzzy AND search...`, "warning");
+                        const fuzzyQuery = plainPhrase.replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 4).join(' AND ');
+                        if (fuzzyQuery) {
+                            xmlText = await fetchArxivDirect(fuzzyQuery);
                         }
                     }
 
@@ -419,39 +409,13 @@
                         const xml = new DOMParser().parseFromString(xmlText, "text/xml");
                         const entries = Array.from(xml.getElementsByTagName("entry"));
                         if (entries.length > 0) {
-                            addLog(`arXiv returned ${entries.length} matches. Attempting full-text extraction...`, "info");
-                            for (const e of entries) {
+                            addLog(`arXiv returned ${entries.length} matches.`, "success");
+                            entries.forEach(e => {
                                 const title = (e.getElementsByTagName("title")[0]?.textContent || "").trim();
-                                let summary = cleanHTML(e.getElementsByTagName("summary")[0]?.textContent || "");
+                                const summary = cleanHTML(e.getElementsByTagName("summary")[0]?.textContent || "");
                                 const url = (e.getElementsByTagName("id")[0]?.textContent || "").trim();
-                                
-                                const arxivId = url.split('/abs/')[1];
-                                if (arxivId) {
-                                    try {
-                                        const htmlUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent('https://arxiv.org/html/' + arxivId)}`;
-                                        const ftRes = await fetch(htmlUrl);
-                                        if (ftRes.ok) {
-                                            const htmlContent = await ftRes.text();
-                                            if (!htmlContent.includes('Article not found') && htmlContent.length > 500) {
-                                                const doc = new DOMParser().parseFromString(htmlContent, "text/html");
-                                                summary = cleanHTML(doc.body.textContent);
-                                            }
-                                        }
-                                    } catch (err) { console.warn("arXiv HTML fetch failed, falling back to abstract."); }
-                                }
-
-                                // NEW: Retroactive Exact Match Check
-                                let entryIsExact = matchedExactly;
-                                const cleanSummary = summary.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
-                                const cleanPhrase = plainPhrase.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
-                                
-                                if (!entryIsExact && cleanSummary.includes(cleanPhrase)) {
-                                    entryIsExact = true;
-                                    addLog(`Exact sequence discovered hidden inside full-text of: ${title.substring(0, 25)}...`, "success");
-                                }
-
-                                processEntry(title, summary, url, "arXiv Open Access", entryIsExact);
-                            }
+                                processEntry(title, summary, url, "arXiv Open Access");
+                            });
                         }
                     }
                 }
@@ -462,17 +426,7 @@
                     if (elsevierResults.length > 0) {
                         addLog(`Elsevier returned ${elsevierResults.length} matches.`, "success");
                         elsevierResults.forEach(r => {
-                            // NEW: Retroactive Exact Match Check for Elsevier
-                            let entryIsExact = isExact;
-                            const cleanSummary = r.summary.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
-                            const cleanPhrase = plainPhrase.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ');
-                            
-                            if (!entryIsExact && cleanSummary.includes(cleanPhrase)) {
-                                entryIsExact = true;
-                                addLog(`Exact sequence discovered hidden inside Elsevier full-text!`, "success");
-                            }
-
-                            processEntry(r.title, r.summary, r.url, r.publisher, entryIsExact);
+                            processEntry(r.title, r.summary, r.url, r.publisher);
                         });
                     }
                 }
@@ -603,37 +557,17 @@
                 const data = await res.json();
                 const entries = data['search-results']?.entry || [];
                 
-                // CHANGED: Process entries asynchronously to fetch full text
-                let results = [];
-                for (const e of entries) {
+                return entries.map(e => {
                     const rawSummary = e['dc:description'] || e['teaser'] || e['dc:title'] || "";
-                    let summary = cleanHTML(rawSummary);
+                    const summary = cleanHTML(rawSummary);
                     const link = e['link']?.find(l => l['@ref'] === 'scidir')?.['@href'] || e['prism:url'] || "#";
-                    const pii = e['pii'];
-                    
-                    // NEW: Retrieval Phase (Elsevier Full Text)
-                    if (pii) {
-                        try {
-                            const ftRes = await fetch(`https://api.elsevier.com/content/article/pii/${pii}?httpAccept=text/plain`, {
-                                headers: { 'X-ELS-APIKey': apiKey }
-                            });
-                            if (ftRes.ok) {
-                                const fullText = await ftRes.text();
-                                if (fullText && fullText.length > 500) {
-                                    summary = cleanHTML(fullText); // Overwrite abstract with full plain text
-                                }
-                            }
-                        } catch (err) { console.warn("Elsevier full-text fetch failed."); }
-                    }
-
-                    results.push({
+                    return {
                         title: e['dc:title'] || "Unknown Title",
                         summary: summary,
                         url: link,
                         publisher: "Elsevier ScienceDirect"
-                    });
-                }
-                return results;
+                    };
+                });
             } catch (err) {
                 return [];
             }
@@ -641,8 +575,7 @@
 
         async function runDeepScan(studentText) {
             addLog("Requesting AI search and cross-referencing...", "info");
-            // FIXED: Removed the hardcoded instruction to check for "ARTEMIS or EcoFair"
-            const prompt = `Perform a PhD-level integrity scan on this text. Identify the SPECIFIC paper titles, authors, and links if the text is copied. If multiple sources are present, list them all clearly. Text: "${studentText}"`;
+            const prompt = `Perform a PhD-level integrity scan on this text. Identify the SPECIFIC paper titles and authors if the text is copied. Check for ARTEMIS or EcoFair. If multiple sources are present, list them all. Text: "${studentText}"`;
             
             try {
                 addLog("Attempting connection with Google Search Grounding...", "info");
