@@ -178,7 +178,7 @@
 
     <script>
         let currentTab = 'local';
-        const apiKey = ""; 
+        const apiKey = "AIzaSyABZt80xnMVpxxifgRrSaOgrL_rrIFDABc"; 
 
         // Distinct colors for different source highlights
         const colorPalette = [
@@ -641,7 +641,8 @@
 
         async function runDeepScan(studentText) {
             addLog("Requesting AI search and cross-referencing...", "info");
-            const prompt = `Perform a PhD-level integrity scan on this text. Identify the SPECIFIC paper titles and authors if the text is copied. Check for ARTEMIS or EcoFair. If multiple sources are present, list them all. Text: "${studentText}"`;
+            // FIXED: Removed the hardcoded instruction to check for "ARTEMIS or EcoFair"
+            const prompt = `Perform a PhD-level integrity scan on this text. Identify the SPECIFIC paper titles, authors, and links if the text is copied. If multiple sources are present, list them all clearly. Text: "${studentText}"`;
             
             try {
                 addLog("Attempting connection with Google Search Grounding...", "info");
